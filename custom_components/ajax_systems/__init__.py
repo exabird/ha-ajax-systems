@@ -10,8 +10,13 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import AjaxApi, AjaxAuthError
+from .backend_api import BackendApi, BackendApiError, BackendAuthError
 from .const import (
     AUTH_MODE_COMPANY,
+    AUTH_MODE_PREMIUM,
+    AUTH_MODE_USER,
+    BACKEND_URL,
+    CONF_AJAX_EMAIL,
     CONF_API_KEY,
     CONF_AUTH_MODE,
     CONF_COMPANY_ID,
@@ -34,9 +39,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Ajax Systems from a config entry."""
     session = async_get_clientsession(hass)
 
-    auth_mode = entry.data.get(CONF_AUTH_MODE, AUTH_MODE_COMPANY)
+    auth_mode = entry.data.get(CONF_AUTH_MODE, AUTH_MODE_PREMIUM)
+    hub_id = entry.data[CONF_HUB_ID]
 
-    if auth_mode == AUTH_MODE_COMPANY:
+    api = None
+    backend_api = None
+
+    if auth_mode == AUTH_MODE_PREMIUM:
+        # Premium/Backend authentication (recommended)
+        backend_api = BackendApi(
+            session=session,
+            ajax_email=entry.data[CONF_AJAX_EMAIL],
+            backend_url=BACKEND_URL,
+        )
+
+        try:
+            await backend_api.check_premium_status()
+        except BackendAuthError as err:
+            raise ConfigEntryAuthFailed from err
+
+    elif auth_mode == AUTH_MODE_COMPANY:
         # Company Token authentication
         api = AjaxApi(
             session=session,
@@ -44,6 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             company_id=entry.data[CONF_COMPANY_ID],
             company_token=entry.data[CONF_COMPANY_TOKEN],
         )
+
     else:
         # User Session authentication
         api = AjaxApi(
@@ -61,20 +84,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 user_id=entry.data[CONF_USER_ID],
             )
 
-    hub_id = entry.data[CONF_HUB_ID]
-
-    coordinator = AjaxDataUpdateCoordinator(hass, api, entry, hub_id)
+    # Create coordinator with either API or Backend API
+    coordinator = AjaxDataUpdateCoordinator(
+        hass=hass,
+        api=api,
+        backend_api=backend_api,
+        entry=entry,
+        hub_id=hub_id,
+    )
 
     try:
         await coordinator.async_config_entry_first_refresh()
-    except AjaxAuthError as err:
+    except (AjaxAuthError, BackendAuthError) as err:
         raise ConfigEntryAuthFailed from err
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Update stored tokens after successful connection (User mode only)
-    if not api.is_company_auth and api.session_token and api.refresh_token:
+    if api and not api.is_company_auth and api.session_token and api.refresh_token:
         hass.config_entries.async_update_entry(
             entry,
             data={

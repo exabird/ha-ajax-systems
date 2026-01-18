@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AjaxApi, AjaxApiError, AjaxAuthError
+from .backend_api import BackendApi, BackendApiError, BackendAuthError
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -111,6 +112,8 @@ class AjaxData:
     hub: AjaxHub | None = None
     devices: dict[str, AjaxDevice] = field(default_factory=dict)
     groups: dict[str, AjaxGroup] = field(default_factory=dict)
+    is_premium: bool = False
+    premium_features: dict[str, bool] = field(default_factory=dict)
 
 
 class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
@@ -121,14 +124,18 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
     def __init__(
         self,
         hass: HomeAssistant,
-        api: AjaxApi,
+        api: AjaxApi | None,
+        backend_api: BackendApi | None,
         entry: ConfigEntry,
         hub_id: str,
     ) -> None:
         """Initialize the coordinator."""
         self.api = api
+        self.backend_api = backend_api
         self.hub_id = hub_id
         self._last_hub_data: dict[str, Any] = {}
+        self._is_premium = False
+        self._premium_features: dict[str, bool] = {}
 
         scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL)
 
@@ -139,61 +146,108 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             update_interval=timedelta(seconds=scan_interval),
         )
 
+    @property
+    def is_premium(self) -> bool:
+        """Return True if using premium subscription."""
+        return self._is_premium
+
+    @property
+    def premium_features(self) -> dict[str, bool]:
+        """Return premium feature flags."""
+        return self._premium_features
+
     async def _async_update_data(self) -> AjaxData:
         """Fetch data from API."""
         try:
-            # Get hub data
-            hub_data = await self.api.get_hub(self.hub_id)
-            self._last_hub_data = hub_data
+            if self.backend_api:
+                return await self._fetch_from_backend()
+            else:
+                return await self._fetch_from_direct_api()
 
-            hub = self._parse_hub(hub_data)
-
-            # Get devices
-            devices_data = await self.api.get_hub_devices(self.hub_id, enrich=True)
-            devices = {}
-
-            for device_data in devices_data:
-                device = self._parse_device(device_data)
-                devices[device.id] = device
-
-            # Parse groups if enabled
-            groups = {}
-            if hub.groups_enabled:
-                # Groups are typically in a separate endpoint or in hub data
-                # For now, we'll look for them in the hub data
-                for group_data in hub_data.get("groups", []):
-                    group = self._parse_group(group_data)
-                    groups[group.id] = group
-
-            return AjaxData(
-                hub=hub,
-                devices=devices,
-                groups=groups,
-            )
-
-        except AjaxAuthError as err:
+        except (AjaxAuthError, BackendAuthError) as err:
             _LOGGER.error("Authentication error: %s", err)
             raise UpdateFailed(f"Authentication error: {err}") from err
-        except AjaxApiError as err:
+        except (AjaxApiError, BackendApiError) as err:
             _LOGGER.error("API error: %s", err)
             raise UpdateFailed(f"Error fetching data: {err}") from err
         except Exception as err:
             _LOGGER.exception("Unexpected error: %s", err)
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
+    async def _fetch_from_backend(self) -> AjaxData:
+        """Fetch data from the premium backend service."""
+        # Update premium status
+        self._is_premium = self.backend_api.is_premium
+        self._premium_features = self.backend_api.premium_features
+
+        # Get hub data
+        hub_data = await self.backend_api.get_hub(self.hub_id)
+        self._last_hub_data = hub_data
+        hub = self._parse_hub_from_backend(hub_data)
+
+        # Get devices
+        devices_data = await self.backend_api.get_devices(self.hub_id)
+        devices = {}
+
+        for device_data in devices_data:
+            device = self._parse_device_from_backend(device_data)
+            devices[device.id] = device
+
+        # Parse groups if enabled
+        groups = {}
+        if hub.groups_enabled:
+            for group_data in hub_data.get("groups", []):
+                group = self._parse_group(group_data)
+                groups[group.id] = group
+
+        return AjaxData(
+            hub=hub,
+            devices=devices,
+            groups=groups,
+            is_premium=self._is_premium,
+            premium_features=self._premium_features,
+        )
+
+    async def _fetch_from_direct_api(self) -> AjaxData:
+        """Fetch data directly from Ajax API."""
+        # Get hub data
+        hub_data = await self.api.get_hub(self.hub_id)
+        self._last_hub_data = hub_data
+        hub = self._parse_hub(hub_data)
+
+        # Get devices
+        devices_data = await self.api.get_hub_devices(self.hub_id, enrich=True)
+        devices = {}
+
+        for device_data in devices_data:
+            device = self._parse_device(device_data)
+            devices[device.id] = device
+
+        # Parse groups if enabled
+        groups = {}
+        if hub.groups_enabled:
+            for group_data in hub_data.get("groups", []):
+                group = self._parse_group(group_data)
+                groups[group.id] = group
+
+        return AjaxData(
+            hub=hub,
+            devices=devices,
+            groups=groups,
+            is_premium=False,  # Direct API = no premium features via backend
+            premium_features={},
+        )
+
     def _parse_hub(self, data: dict[str, Any]) -> AjaxHub:
-        """Parse hub data into AjaxHub object."""
-        # Parse state - can be "ARMED", "DISARMED", "DISARMED_NIGHT_MODE_OFF", etc.
+        """Parse hub data into AjaxHub object (direct API format)."""
         state = data.get("state", data.get("armState", "DISARMED"))
         armed = "ARMED" in state.upper() and "DISARMED" not in state.upper()
         night_mode = "NIGHT_MODE" in state.upper() and "OFF" not in state.upper()
 
-        # Get battery info from nested object
         battery = data.get("battery", {})
         battery_level = battery.get("chargeLevelPercentage")
         battery_state = battery.get("state")
 
-        # Get firmware version
         firmware = data.get("firmware", {})
         firmware_version = firmware.get("version")
 
@@ -201,7 +255,7 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             id=data.get("id", ""),
             name=data.get("name", "Ajax Hub"),
             model=data.get("hubSubtype", data.get("type", "Hub")),
-            online=data.get("online", True),  # Assume online if we got data
+            online=data.get("online", True),
             armed=armed,
             night_mode=night_mode,
             firmware_version=firmware_version,
@@ -211,62 +265,37 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             raw_data=data,
         )
 
-    def _parse_device(self, data: dict[str, Any]) -> AjaxDevice:
-        """Parse device data into AjaxDevice object.
+    def _parse_hub_from_backend(self, data: dict[str, Any]) -> AjaxHub:
+        """Parse hub data into AjaxHub object (backend format)."""
+        state = data.get("state", {})
 
-        Device data structure from Ajax API:
-        {
-            "id": "...",
-            "deviceType": "DoorProtectPlus",
-            "deviceName": "...",
-            "model": {
-                "batteryChargeLevelPercentage": 100,
-                "temperature": 17,
-                "signalLevel": "STRONG",
-                "tampered": false,
-                "state": "PASSIVE",
-                "reedClosed": true,  # for door sensors
-                ...
-            }
-        }
-        """
-        # Get model data (nested object with most properties)
+        return AjaxHub(
+            id=data.get("id", ""),
+            name=data.get("name", "Ajax Hub"),
+            model=data.get("model", "Hub"),
+            online=data.get("online", True),
+            armed=state.get("armed", False),
+            night_mode=state.get("nightMode", False),
+            firmware_version=data.get("firmware"),
+            battery_level=data.get("battery", {}).get("level"),
+            battery_state=data.get("battery", {}).get("state"),
+            groups_enabled=data.get("groupsEnabled", False),
+            raw_data=data,
+        )
+
+    def _parse_device(self, data: dict[str, Any]) -> AjaxDevice:
+        """Parse device data into AjaxDevice object (direct API format)."""
         model = data.get("model", {})
 
         device_type = data.get("deviceType", model.get("deviceType", ""))
         device_name = data.get("deviceName", model.get("deviceName", data.get("name", "Device")))
 
-        # Get battery from model
         battery_level = model.get("batteryChargeLevelPercentage")
-
-        # Convert signal level to percentage
         signal_str = model.get("signalLevel", "")
         signal_strength = SIGNAL_LEVEL_MAP.get(signal_str) if signal_str else None
-
-        # Get temperature
         temperature = model.get("temperature")
 
-        # Determine triggered state based on device type
-        triggered = False
-        if any(t in device_type for t in DOOR_SENSORS):
-            # For door sensors, triggered = door open = reed NOT closed
-            reed_closed = model.get("reedClosed", True)
-            triggered = not reed_closed
-        elif any(t in device_type for t in MOTION_SENSORS):
-            # Motion state
-            state = model.get("state", "")
-            triggered = state.upper() in ("ACTIVE", "ALARM", "TRIGGERED")
-        elif any(t in device_type for t in SMOKE_SENSORS):
-            state = model.get("state", "")
-            triggered = state.upper() in ("ALARM", "TRIGGERED", "SMOKE")
-        elif any(t in device_type for t in WATER_SENSORS):
-            state = model.get("state", "")
-            triggered = state.upper() in ("ALARM", "TRIGGERED", "LEAK")
-        elif any(t in device_type for t in GLASS_BREAK_SENSORS):
-            state = model.get("state", "")
-            triggered = state.upper() in ("ALARM", "TRIGGERED")
-
-        # Determine bypassed state
+        triggered = self._determine_triggered_state(device_type, model)
         bypass_state = model.get("bypassState", [])
         bypassed = bool(bypass_state)
 
@@ -287,6 +316,44 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             raw_data=data,
         )
 
+    def _parse_device_from_backend(self, data: dict[str, Any]) -> AjaxDevice:
+        """Parse device data into AjaxDevice object (backend format)."""
+        return AjaxDevice(
+            id=data.get("id", ""),
+            name=data.get("name", "Device"),
+            device_type=data.get("type", ""),
+            room_id=data.get("roomId"),
+            group_id=data.get("groupId"),
+            online=data.get("online", False),
+            battery_level=data.get("battery"),
+            signal_strength=data.get("signalStrength"),
+            temperature=data.get("temperature"),
+            tampered=data.get("tampered", False),
+            triggered=data.get("triggered", False),
+            bypassed=data.get("bypassed", False),
+            firmware_version=data.get("firmware"),
+            raw_data=data,
+        )
+
+    def _determine_triggered_state(self, device_type: str, model: dict[str, Any]) -> bool:
+        """Determine triggered state based on device type."""
+        if any(t in device_type for t in DOOR_SENSORS):
+            reed_closed = model.get("reedClosed", True)
+            return not reed_closed
+        elif any(t in device_type for t in MOTION_SENSORS):
+            state = model.get("state", "")
+            return state.upper() in ("ACTIVE", "ALARM", "TRIGGERED")
+        elif any(t in device_type for t in SMOKE_SENSORS):
+            state = model.get("state", "")
+            return state.upper() in ("ALARM", "TRIGGERED", "SMOKE")
+        elif any(t in device_type for t in WATER_SENSORS):
+            state = model.get("state", "")
+            return state.upper() in ("ALARM", "TRIGGERED", "LEAK")
+        elif any(t in device_type for t in GLASS_BREAK_SENSORS):
+            state = model.get("state", "")
+            return state.upper() in ("ALARM", "TRIGGERED")
+        return False
+
     def _parse_group(self, data: dict[str, Any]) -> AjaxGroup:
         """Parse group data into AjaxGroup object."""
         state = data.get("armState", data.get("state", "DISARMED"))
@@ -301,14 +368,21 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             raw_data=data,
         )
 
+    # Arming methods
     async def async_arm(self, ignore_problems: bool = False) -> None:
         """Arm the hub."""
-        await self.api.arm_hub(self.hub_id, ignore_problems)
+        if self.backend_api:
+            await self.backend_api.arm_hub(self.hub_id, ignore_problems)
+        else:
+            await self.api.arm_hub(self.hub_id, ignore_problems)
         await self.async_request_refresh()
 
     async def async_disarm(self, ignore_problems: bool = False) -> None:
         """Disarm the hub."""
-        await self.api.disarm_hub(self.hub_id, ignore_problems)
+        if self.backend_api:
+            await self.backend_api.disarm_hub(self.hub_id, ignore_problems)
+        else:
+            await self.api.disarm_hub(self.hub_id, ignore_problems)
         await self.async_request_refresh()
 
     async def async_arm_group(
@@ -317,7 +391,10 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
         ignore_problems: bool = False,
     ) -> None:
         """Arm a specific group."""
-        await self.api.arm_group(self.hub_id, group_id, ignore_problems)
+        if self.backend_api:
+            await self.backend_api.arm_group(self.hub_id, group_id, ignore_problems)
+        else:
+            await self.api.arm_group(self.hub_id, group_id, ignore_problems)
         await self.async_request_refresh()
 
     async def async_disarm_group(
@@ -326,7 +403,10 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
         ignore_problems: bool = False,
     ) -> None:
         """Disarm a specific group."""
-        await self.api.disarm_group(self.hub_id, group_id, ignore_problems)
+        if self.backend_api:
+            await self.backend_api.disarm_group(self.hub_id, group_id, ignore_problems)
+        else:
+            await self.api.disarm_group(self.hub_id, group_id, ignore_problems)
         await self.async_request_refresh()
 
     async def async_set_night_mode(
@@ -336,9 +416,14 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
         ignore_problems: bool = False,
     ) -> None:
         """Set night mode for a group."""
-        await self.api.set_night_mode(
-            self.hub_id, group_id, enabled, ignore_problems
-        )
+        if self.backend_api:
+            await self.backend_api.set_night_mode(
+                self.hub_id, group_id, enabled, ignore_problems
+            )
+        else:
+            await self.api.set_night_mode(
+                self.hub_id, group_id, enabled, ignore_problems
+            )
         await self.async_request_refresh()
 
     async def async_switch_device(
@@ -348,7 +433,7 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
     ) -> None:
         """Turn a switch device on or off."""
         device = self.data.devices.get(device_id)
-        if device:
+        if device and self.api:
             await self.api.switch_device(
                 self.hub_id,
                 device_id,

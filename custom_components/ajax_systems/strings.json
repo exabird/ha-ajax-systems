@@ -2,51 +2,49 @@
   "config": {
     "step": {
       "user": {
-        "title": "Ajax Systems - Authentication Mode",
-        "description": "Choose how you want to authenticate with Ajax Systems.",
+        "title": "Ajax Systems",
+        "description": "Choose how you want to connect to your Ajax security system.",
         "data": {
-          "auth_mode": "Authentication Mode"
+          "auth_mode": "Connection Mode"
+        }
+      },
+      "premium_auth": {
+        "title": "Connect to Ajax",
+        "description": "Enter your Ajax account email. This is the same email you use in the Ajax app.\n\nNo password required - your credentials stay private!\n\n[Get Premium features]({premium_url})",
+        "data": {
+          "ajax_email": "Ajax Account Email"
         }
       },
       "company_auth": {
         "title": "Company/PRO Authentication",
-        "description": "Enter your Ajax Systems API credentials. This mode is for installers and companies with API access.",
+        "description": "Enter your Ajax API credentials from the PRO Dashboard.",
         "data": {
           "api_key": "API Key",
           "company_id": "Company ID",
           "company_token": "Company Token"
-        },
-        "data_description": {
-          "api_key": "API Key from Ajax Systems developer portal",
-          "company_id": "Your company ID from Ajax PRO Dashboard",
-          "company_token": "Company token from Ajax PRO Dashboard API settings"
         }
       },
       "user_auth": {
-        "title": "User Authentication",
-        "description": "Enter your Ajax Systems credentials. This mode is for end-users with Ajax app access.",
+        "title": "User API Authentication",
+        "description": "Enter your Ajax API credentials and account details.",
         "data": {
           "api_key": "API Key",
           "username": "Email",
           "password": "Password"
-        },
-        "data_description": {
-          "api_key": "API Key from Ajax Systems developer portal",
-          "username": "Email used for Ajax app login",
-          "password": "Password for Ajax app"
         }
       },
       "select_hub": {
         "title": "Select Hub",
-        "description": "Select the Ajax hub you want to configure.",
+        "description": "Select the Ajax hub you want to add to Home Assistant.",
         "data": {
           "hub_id": "Hub"
         }
       },
       "reauth_confirm": {
-        "title": "Re-authenticate Ajax Systems",
-        "description": "Your Ajax Systems authentication has expired. Please re-enter your credentials.",
+        "title": "Re-authenticate",
+        "description": "Please re-enter your credentials.",
         "data": {
+          "ajax_email": "Ajax Account Email",
           "api_key": "API Key",
           "company_id": "Company ID",
           "company_token": "Company Token",
@@ -57,9 +55,9 @@
     },
     "error": {
       "auth_error": "Authentication failed. Please check your credentials.",
-      "cannot_connect": "Cannot connect to Ajax Systems API. Please check your internet connection.",
+      "cannot_connect": "Cannot connect to Ajax Systems. Please check your internet connection.",
       "no_spaces": "No spaces found for this account.",
-      "no_hubs": "No hubs found in the selected space.",
+      "no_hubs": "No hubs found for this account.",
       "invalid_hub": "Invalid hub selected.",
       "unknown": "An unknown error occurred."
     },
