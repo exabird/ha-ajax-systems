@@ -11,7 +11,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import AjaxApi, AjaxAuthError
 from .const import (
+    AUTH_MODE_COMPANY,
     CONF_API_KEY,
+    CONF_AUTH_MODE,
+    CONF_COMPANY_ID,
+    CONF_COMPANY_TOKEN,
     CONF_HUB_ID,
     CONF_PASSWORD_HASH,
     CONF_REFRESH_TOKEN,
@@ -30,20 +34,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Ajax Systems from a config entry."""
     session = async_get_clientsession(hass)
 
-    api = AjaxApi(
-        session=session,
-        api_key=entry.data[CONF_API_KEY],
-        username=entry.data.get(CONF_USERNAME),
-        password_hash=entry.data.get(CONF_PASSWORD_HASH),
-    )
+    auth_mode = entry.data.get(CONF_AUTH_MODE, AUTH_MODE_COMPANY)
 
-    # Restore tokens if available
-    if entry.data.get(CONF_SESSION_TOKEN):
-        api.set_tokens(
-            session_token=entry.data[CONF_SESSION_TOKEN],
-            refresh_token=entry.data[CONF_REFRESH_TOKEN],
-            user_id=entry.data[CONF_USER_ID],
+    if auth_mode == AUTH_MODE_COMPANY:
+        # Company Token authentication
+        api = AjaxApi(
+            session=session,
+            api_key=entry.data[CONF_API_KEY],
+            company_id=entry.data[CONF_COMPANY_ID],
+            company_token=entry.data[CONF_COMPANY_TOKEN],
         )
+    else:
+        # User Session authentication
+        api = AjaxApi(
+            session=session,
+            api_key=entry.data[CONF_API_KEY],
+            username=entry.data.get(CONF_USERNAME),
+            password_hash=entry.data.get(CONF_PASSWORD_HASH),
+        )
+
+        # Restore tokens if available
+        if entry.data.get(CONF_SESSION_TOKEN):
+            api.set_tokens(
+                session_token=entry.data[CONF_SESSION_TOKEN],
+                refresh_token=entry.data[CONF_REFRESH_TOKEN],
+                user_id=entry.data[CONF_USER_ID],
+            )
 
     hub_id = entry.data[CONF_HUB_ID]
 
@@ -57,8 +73,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Update stored tokens after successful connection
-    if api.session_token and api.refresh_token:
+    # Update stored tokens after successful connection (User mode only)
+    if not api.is_company_auth and api.session_token and api.refresh_token:
         hass.config_entries.async_update_entry(
             entry,
             data={

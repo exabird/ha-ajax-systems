@@ -20,9 +20,35 @@ Custom Home Assistant integration for **Ajax Systems** security devices.
 
 ## Requirements
 
-- **Ajax Systems API Key** - Required for authentication
-- **Ajax Systems Account** - With access to your hub
+- **Ajax Systems API Key** - Required for all authentication methods
 - **Home Assistant 2024.1.0+**
+- **One of the following authentication methods:**
+  - **Company/PRO Mode**: Company ID + Company Token (for installers)
+  - **User Mode**: Email + Password (for end-users)
+
+## ⚠️ Important: API Access
+
+Ajax Systems operates on a **B2B model** - the Enterprise API is only available to approved security companies and installers, not directly to end-users.
+
+### How to get API access
+
+**Option 1: Through your installer (Recommended)**
+- Contact your Ajax security system installer
+- Ask them to provide you with API credentials (API Key + Company Token)
+- They can generate these from the Ajax PRO Dashboard
+
+**Option 2: Request access as a company**
+- If you are a security company/installer, apply at: [ajax.systems/api-request](https://ajax.systems/api-request/)
+- Requirements: Must manage or plan to manage thousands of Ajax systems
+
+### Authentication Modes
+
+| Mode | Who can use it | Required credentials |
+|------|----------------|---------------------|
+| **Company/PRO** | Installers with API access | API Key + Company ID + Company Token |
+| **User** | End-users (with API Key from installer) | API Key + Email + Password |
+
+**Note:** Both modes require an API Key, which is only provided to approved companies/installers. End-users need to obtain the API Key from their installer.
 
 ## Installation
 
@@ -46,20 +72,12 @@ Custom Home Assistant integration for **Ajax Systems** security devices.
 1. Go to **Settings → Devices & Services**
 2. Click **Add Integration**
 3. Search for "Ajax Systems"
-4. Enter your credentials:
-   - **API Key**: Your Ajax Systems API key
-   - **Email**: Your Ajax account email
-   - **Password**: Your Ajax account password
-5. Select your space (if you have multiple)
-6. Done!
-
-## Getting an API Key
-
-To use this integration, you need an API key from Ajax Systems:
-
-1. Contact Ajax Systems support or visit their developer portal
-2. Request API access for your account
-3. You will receive an API key to use with this integration
+4. Choose your authentication mode:
+   - **Company/PRO**: For installers with API dashboard access
+   - **User**: For end-users with API Key from their installer
+5. Enter your credentials
+6. Select your hub
+7. Done!
 
 ## Supported Devices
 
@@ -102,8 +120,8 @@ Disarm the security system.
 
 ### Authentication Failed
 - Verify your API key is correct
-- Check your email and password
-- Ensure your account has API access enabled
+- For Company mode: Check your Company ID and Company Token
+- For User mode: Check your email and password
 
 ### No Devices Found
 - Verify your hub is online in the Ajax app

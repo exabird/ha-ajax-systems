@@ -6,14 +6,25 @@ DOMAIN = "ajax_systems"
 API_BASE_URL = "https://api.ajax.systems/api"
 API_TIMEOUT = 30
 
-# Authentication
+# Authentication - Common
 CONF_API_KEY = "api_key"
+CONF_AUTH_MODE = "auth_mode"
+
+# Authentication - Company mode
+CONF_COMPANY_ID = "company_id"
+CONF_COMPANY_TOKEN = "company_token"
+
+# Authentication - User mode
 CONF_USERNAME = "username"
 CONF_PASSWORD_HASH = "password_hash"
 CONF_SESSION_TOKEN = "session_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_USER_ID = "user_id"
 CONF_TOKEN_EXPIRY = "token_expiry"
+
+# Auth modes
+AUTH_MODE_COMPANY = "company"
+AUTH_MODE_USER = "user"
 
 # Configuration
 CONF_HUB_ID = "hub_id"
@@ -103,4 +114,16 @@ SIRENS = [
     "StreetSiren",
     "StreetSirenPlus",
     "StreetSirenFibra",
+]
+
+KEYPADS = [
+    "Keypad",
+    "KeypadPlus",
+    "KeypadCombi",
+    "KeypadTouchscreen",
+]
+
+RANGE_EXTENDERS = [
+    "RangeExtender",
+    "RangeExtender2",
 ]

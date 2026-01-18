@@ -17,6 +17,7 @@ from .const import (
     DOOR_SENSORS,
     GLASS_BREAK_SENSORS,
     MOTION_SENSORS,
+    SIGNAL_LEVEL_MAP,
     SMOKE_SENSORS,
     SWITCHES,
     WATER_SENSORS,
@@ -34,11 +35,11 @@ class AjaxHub:
     model: str
     online: bool
     armed: bool
+    night_mode: bool = False
     firmware_version: str | None = None
-    gsm_signal: int | None = None
-    wifi_signal: int | None = None
-    ethernet_connected: bool = False
-    battery_charge: int | None = None
+    battery_level: int | None = None
+    battery_state: str | None = None
+    groups_enabled: bool = False
     raw_data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -50,14 +51,15 @@ class AjaxDevice:
     name: str
     device_type: str
     room_id: str | None
-    room_name: str | None
+    group_id: str | None
     online: bool
     battery_level: int | None
-    signal_strength: str | None
+    signal_strength: int | None  # Converted to percentage
     temperature: float | None
     tampered: bool
     triggered: bool
     bypassed: bool
+    firmware_version: str | None = None
     raw_data: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -92,13 +94,23 @@ class AjaxDevice:
 
 
 @dataclass
+class AjaxGroup:
+    """Representation of an Ajax group."""
+
+    id: str
+    name: str
+    armed: bool
+    night_mode: bool
+    raw_data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class AjaxData:
     """Data container for Ajax Systems."""
 
     hub: AjaxHub | None = None
     devices: dict[str, AjaxDevice] = field(default_factory=dict)
-    rooms: dict[str, str] = field(default_factory=dict)
-    groups: dict[str, dict[str, Any]] = field(default_factory=dict)
+    groups: dict[str, AjaxGroup] = field(default_factory=dict)
 
 
 class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
@@ -139,28 +151,23 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             # Get devices
             devices_data = await self.api.get_hub_devices(self.hub_id, enrich=True)
             devices = {}
-            rooms = {}
 
             for device_data in devices_data:
                 device = self._parse_device(device_data)
                 devices[device.id] = device
 
-                # Track rooms
-                if device.room_id and device.room_name:
-                    rooms[device.room_id] = device.room_name
-
-            # Get groups if available
+            # Parse groups if enabled
             groups = {}
-            if "groups" in hub_data:
+            if hub.groups_enabled:
+                # Groups are typically in a separate endpoint or in hub data
+                # For now, we'll look for them in the hub data
                 for group_data in hub_data.get("groups", []):
-                    group_id = group_data.get("id")
-                    if group_id:
-                        groups[group_id] = group_data
+                    group = self._parse_group(group_data)
+                    groups[group.id] = group
 
             return AjaxData(
                 hub=hub,
                 devices=devices,
-                rooms=rooms,
                 groups=groups,
             )
 
@@ -176,78 +183,121 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
 
     def _parse_hub(self, data: dict[str, Any]) -> AjaxHub:
         """Parse hub data into AjaxHub object."""
-        # Determine armed state
-        arm_state = data.get("armState", data.get("state", "DISARMED"))
-        armed = arm_state.upper() == "ARMED"
+        # Parse state - can be "ARMED", "DISARMED", "DISARMED_NIGHT_MODE_OFF", etc.
+        state = data.get("state", data.get("armState", "DISARMED"))
+        armed = "ARMED" in state.upper() and "DISARMED" not in state.upper()
+        night_mode = "NIGHT_MODE" in state.upper() and "OFF" not in state.upper()
 
-        # Get connectivity info
-        gsm_signal = None
-        wifi_signal = None
-        ethernet = False
+        # Get battery info from nested object
+        battery = data.get("battery", {})
+        battery_level = battery.get("chargeLevelPercentage")
+        battery_state = battery.get("state")
 
-        connectivity = data.get("connectivity", {})
-        if connectivity:
-            gsm = connectivity.get("gsm", {})
-            gsm_signal = gsm.get("signalLevel")
-
-            wifi = connectivity.get("wifi", {})
-            wifi_signal = wifi.get("signalLevel")
-
-            ethernet = connectivity.get("ethernet", {}).get("connected", False)
+        # Get firmware version
+        firmware = data.get("firmware", {})
+        firmware_version = firmware.get("version")
 
         return AjaxHub(
             id=data.get("id", ""),
             name=data.get("name", "Ajax Hub"),
-            model=data.get("type", data.get("hubType", "Hub")),
-            online=data.get("online", False),
+            model=data.get("hubSubtype", data.get("type", "Hub")),
+            online=data.get("online", True),  # Assume online if we got data
             armed=armed,
-            firmware_version=data.get("firmwareVersion"),
-            gsm_signal=gsm_signal,
-            wifi_signal=wifi_signal,
-            ethernet_connected=ethernet,
-            battery_charge=data.get("batteryChargeLevelPercentage"),
+            night_mode=night_mode,
+            firmware_version=firmware_version,
+            battery_level=battery_level,
+            battery_state=battery_state,
+            groups_enabled=data.get("groupsEnabled", False),
             raw_data=data,
         )
 
     def _parse_device(self, data: dict[str, Any]) -> AjaxDevice:
-        """Parse device data into AjaxDevice object."""
+        """Parse device data into AjaxDevice object.
+
+        Device data structure from Ajax API:
+        {
+            "id": "...",
+            "deviceType": "DoorProtectPlus",
+            "deviceName": "...",
+            "model": {
+                "batteryChargeLevelPercentage": 100,
+                "temperature": 17,
+                "signalLevel": "STRONG",
+                "tampered": false,
+                "state": "PASSIVE",
+                "reedClosed": true,  # for door sensors
+                ...
+            }
+        }
+        """
+        # Get model data (nested object with most properties)
+        model = data.get("model", {})
+
+        device_type = data.get("deviceType", model.get("deviceType", ""))
+        device_name = data.get("deviceName", model.get("deviceName", data.get("name", "Device")))
+
+        # Get battery from model
+        battery_level = model.get("batteryChargeLevelPercentage")
+
+        # Convert signal level to percentage
+        signal_str = model.get("signalLevel", "")
+        signal_strength = SIGNAL_LEVEL_MAP.get(signal_str) if signal_str else None
+
+        # Get temperature
+        temperature = model.get("temperature")
+
         # Determine triggered state based on device type
         triggered = False
-        device_type = data.get("deviceType", "")
-
-        # For motion sensors, check motion state
-        if any(t in device_type for t in MOTION_SENSORS):
-            triggered = data.get("motionDetected", False)
-        # For door sensors, check open state
-        elif any(t in device_type for t in DOOR_SENSORS):
-            triggered = data.get("openState", data.get("isOpen", False))
-        # For smoke sensors, check alarm state
+        if any(t in device_type for t in DOOR_SENSORS):
+            # For door sensors, triggered = door open = reed NOT closed
+            reed_closed = model.get("reedClosed", True)
+            triggered = not reed_closed
+        elif any(t in device_type for t in MOTION_SENSORS):
+            # Motion state
+            state = model.get("state", "")
+            triggered = state.upper() in ("ACTIVE", "ALARM", "TRIGGERED")
         elif any(t in device_type for t in SMOKE_SENSORS):
-            triggered = data.get("smokeDetected", data.get("alarm", False))
-        # For water sensors, check leak state
+            state = model.get("state", "")
+            triggered = state.upper() in ("ALARM", "TRIGGERED", "SMOKE")
         elif any(t in device_type for t in WATER_SENSORS):
-            triggered = data.get("leakDetected", data.get("alarm", False))
-        # For glass break sensors
+            state = model.get("state", "")
+            triggered = state.upper() in ("ALARM", "TRIGGERED", "LEAK")
         elif any(t in device_type for t in GLASS_BREAK_SENSORS):
-            triggered = data.get("glassBreakDetected", data.get("alarm", False))
+            state = model.get("state", "")
+            triggered = state.upper() in ("ALARM", "TRIGGERED")
 
         # Determine bypassed state
-        bypass_state = data.get("bypassState", "")
-        bypassed = bypass_state and "BYPASS" in bypass_state.upper()
+        bypass_state = model.get("bypassState", [])
+        bypassed = bool(bypass_state)
 
         return AjaxDevice(
-            id=data.get("id", ""),
-            name=data.get("deviceName", data.get("name", "Device")),
+            id=data.get("id", model.get("id", "")),
+            name=device_name,
             device_type=device_type,
-            room_id=data.get("roomId"),
-            room_name=data.get("roomName"),
-            online=data.get("online", False),
-            battery_level=data.get("batteryChargeLevelPercentage"),
-            signal_strength=data.get("signalLevel"),
-            temperature=data.get("temperature"),
-            tampered=data.get("tampered", False),
+            room_id=data.get("roomId", model.get("roomId")),
+            group_id=data.get("groupId", model.get("groupId")),
+            online=model.get("online", data.get("online", False)),
+            battery_level=battery_level,
+            signal_strength=signal_strength,
+            temperature=temperature,
+            tampered=model.get("tampered", False),
             triggered=triggered,
             bypassed=bypassed,
+            firmware_version=model.get("firmwareVersion"),
+            raw_data=data,
+        )
+
+    def _parse_group(self, data: dict[str, Any]) -> AjaxGroup:
+        """Parse group data into AjaxGroup object."""
+        state = data.get("armState", data.get("state", "DISARMED"))
+        armed = "ARMED" in state.upper() and "DISARMED" not in state.upper()
+        night_mode = data.get("nightMode", False)
+
+        return AjaxGroup(
+            id=data.get("id", ""),
+            name=data.get("name", f"Group {data.get('id', '')}"),
+            armed=armed,
+            night_mode=night_mode,
             raw_data=data,
         )
 

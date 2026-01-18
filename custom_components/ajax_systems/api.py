@@ -33,31 +33,57 @@ class AjaxConnectionError(AjaxApiError):
 
 
 class AjaxApi:
-    """API client for Ajax Systems."""
+    """API client for Ajax Systems.
+
+    Supports two authentication modes:
+    1. Company Token (X-Company-Token) - for company/PRO accounts
+    2. User Session Token (X-Session-Token) - for user accounts
+    """
 
     def __init__(
         self,
         session: aiohttp.ClientSession,
         api_key: str,
+        # Company auth
+        company_id: str | None = None,
+        company_token: str | None = None,
+        # User auth
         username: str | None = None,
         password_hash: str | None = None,
     ) -> None:
         """Initialize the API client."""
         self._session = session
         self._api_key = api_key
+
+        # Company auth
+        self._company_id = company_id
+        self._company_token = company_token
+
+        # User auth
         self._username = username
         self._password_hash = password_hash
-
-        # Token management
         self._session_token: str | None = None
         self._refresh_token: str | None = None
         self._user_id: str | None = None
         self._token_expiry: datetime | None = None
 
+        # Determine auth mode
+        self._is_company_auth = bool(company_id and company_token)
+
     @staticmethod
     def hash_password(password: str) -> str:
         """Hash password using SHA-256."""
         return hashlib.sha256(password.encode()).hexdigest()
+
+    @property
+    def is_company_auth(self) -> bool:
+        """Return True if using company authentication."""
+        return self._is_company_auth
+
+    @property
+    def company_id(self) -> str | None:
+        """Return the company ID."""
+        return self._company_id
 
     @property
     def user_id(self) -> str | None:
@@ -91,6 +117,8 @@ class AjaxApi:
 
     def _is_token_expired(self) -> bool:
         """Check if the session token is expired or about to expire."""
+        if self._is_company_auth:
+            return False  # Company tokens don't expire
         if not self._token_expiry:
             return True
         return datetime.now() >= (
@@ -99,6 +127,9 @@ class AjaxApi:
 
     async def _ensure_valid_token(self) -> None:
         """Ensure we have a valid session token."""
+        if self._is_company_auth:
+            return  # Company tokens are always valid
+
         if self._is_token_expired():
             if self._refresh_token and self._user_id:
                 await self._refresh_session()
@@ -106,6 +137,26 @@ class AjaxApi:
                 await self.login(self._username, self._password_hash)
             else:
                 raise AjaxAuthError("No valid authentication method available")
+
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Get authentication headers based on auth mode."""
+        headers = {
+            "X-Api-Key": self._api_key,
+            "Content-Type": "application/json",
+        }
+
+        if self._is_company_auth:
+            headers["X-Company-Token"] = self._company_token
+        elif self._session_token:
+            headers["X-Session-Token"] = self._session_token
+
+        return headers
+
+    def _get_base_path(self) -> str:
+        """Get base path for API calls based on auth mode."""
+        if self._is_company_auth:
+            return f"/company/{self._company_id}"
+        return f"/user/{self._user_id}"
 
     async def _request(
         self,
@@ -115,16 +166,12 @@ class AjaxApi:
         **kwargs: Any,
     ) -> dict[str, Any] | list[Any] | None:
         """Make an API request."""
-        if auth_required:
+        if auth_required and not self._is_company_auth:
             await self._ensure_valid_token()
 
         url = f"{API_BASE_URL}{endpoint}"
         headers = kwargs.pop("headers", {})
-        headers["X-Api-Key"] = self._api_key
-        headers["Content-Type"] = "application/json"
-
-        if auth_required and self._session_token:
-            headers["X-Session-Token"] = self._session_token
+        headers.update(self._get_auth_headers() if auth_required else {"X-Api-Key": self._api_key, "Content-Type": "application/json"})
 
         try:
             async with self._session.request(
@@ -145,10 +192,8 @@ class AjaxApi:
 
         except ClientResponseError as err:
             if err.status == 401:
-                # Token expired, try to refresh
-                if self._refresh_token and self._user_id:
+                if not self._is_company_auth and self._refresh_token and self._user_id:
                     await self._refresh_session()
-                    # Retry the request
                     return await self._request(method, endpoint, auth_required, **kwargs)
                 raise AjaxAuthError("Authentication failed") from err
             if err.status == 403:
@@ -176,14 +221,17 @@ class AjaxApi:
         """Make a DELETE request."""
         await self._request("DELETE", endpoint, **kwargs)
 
-    # Authentication methods
+    # Authentication methods (User mode only)
     async def login(
         self,
         username: str,
         password_hash: str,
         user_role: str = "USER",
     ) -> dict[str, Any]:
-        """Login and obtain session token."""
+        """Login and obtain session token (User auth mode only)."""
+        if self._is_company_auth:
+            raise AjaxApiError("Login not supported in company auth mode")
+
         self._username = username
         self._password_hash = password_hash
 
@@ -212,7 +260,10 @@ class AjaxApi:
         return result
 
     async def _refresh_session(self) -> None:
-        """Refresh the session token."""
+        """Refresh the session token (User auth mode only)."""
+        if self._is_company_auth:
+            return
+
         if not self._refresh_token or not self._user_id:
             raise AjaxAuthError("Cannot refresh - no refresh token")
 
@@ -238,55 +289,57 @@ class AjaxApi:
 
         _LOGGER.debug("Session token refreshed successfully")
 
-    # User and Space methods
-    async def get_user(self) -> dict[str, Any]:
-        """Get current user information."""
-        return await self.get(f"/user/{self._user_id}")
-
+    # Spaces methods
     async def get_spaces(self) -> list[dict[str, Any]]:
-        """Get all spaces for the current user."""
-        result = await self.get(f"/user/{self._user_id}/spaces")
+        """Get all spaces."""
+        base = self._get_base_path()
+        result = await self.get(f"{base}/spaces")
         return result if isinstance(result, list) else result.get("spaces", [])
 
     async def get_space(self, space_id: str) -> dict[str, Any]:
         """Get space details."""
-        return await self.get(f"/user/{self._user_id}/spaces/{space_id}")
+        base = self._get_base_path()
+        return await self.get(f"{base}/spaces/{space_id}")
 
     # Hub methods
     async def get_hub(self, hub_id: str) -> dict[str, Any]:
         """Get hub details."""
-        return await self.get(f"/user/{self._user_id}/hubs/{hub_id}")
+        base = self._get_base_path()
+        return await self.get(f"{base}/hubs/{hub_id}")
 
     async def get_hub_devices(self, hub_id: str, enrich: bool = True) -> list[dict[str, Any]]:
         """Get all devices for a hub."""
+        base = self._get_base_path()
         params = {"enrich": str(enrich).lower()}
         result = await self.get(
-            f"/user/{self._user_id}/hubs/{hub_id}/devices",
+            f"{base}/hubs/{hub_id}/devices",
             params=params,
         )
-        return result if isinstance(result, list) else result.get("devices", [])
+        return result if isinstance(result, list) else result.get("devices", result.get("deviceInfos", []))
 
     # Arming methods
     async def arm_hub(self, hub_id: str, ignore_problems: bool = False) -> None:
         """Arm the hub."""
+        base = self._get_base_path()
         data = {
             "command": "ARM",
             "ignoreProblems": ignore_problems,
         }
         await self.put(
-            f"/user/{self._user_id}/hubs/{hub_id}/commands/arming",
+            f"{base}/hubs/{hub_id}/commands/arming",
             json=data,
         )
         _LOGGER.info("Hub %s armed", hub_id)
 
     async def disarm_hub(self, hub_id: str, ignore_problems: bool = False) -> None:
         """Disarm the hub."""
+        base = self._get_base_path()
         data = {
             "command": "DISARM",
             "ignoreProblems": ignore_problems,
         }
         await self.put(
-            f"/user/{self._user_id}/hubs/{hub_id}/commands/arming",
+            f"{base}/hubs/{hub_id}/commands/arming",
             json=data,
         )
         _LOGGER.info("Hub %s disarmed", hub_id)
@@ -299,13 +352,14 @@ class AjaxApi:
         ignore_problems: bool = False,
     ) -> None:
         """Set night mode for a group."""
+        base = self._get_base_path()
         command = "NIGHT_MODE_ON" if enabled else "NIGHT_MODE_OFF"
         data = {
             "command": command,
             "ignoreProblems": ignore_problems,
         }
         await self.put(
-            f"/user/{self._user_id}/hubs/{hub_id}/groups/{group_id}/commands/arming",
+            f"{base}/hubs/{hub_id}/groups/{group_id}/commands/arming",
             json=data,
         )
         _LOGGER.info("Night mode %s for group %s", "enabled" if enabled else "disabled", group_id)
@@ -317,12 +371,13 @@ class AjaxApi:
         ignore_problems: bool = False,
     ) -> None:
         """Arm a specific group."""
+        base = self._get_base_path()
         data = {
             "command": "ARM",
             "ignoreProblems": ignore_problems,
         }
         await self.put(
-            f"/user/{self._user_id}/hubs/{hub_id}/groups/{group_id}/commands/arming",
+            f"{base}/hubs/{hub_id}/groups/{group_id}/commands/arming",
             json=data,
         )
         _LOGGER.info("Group %s armed", group_id)
@@ -334,12 +389,13 @@ class AjaxApi:
         ignore_problems: bool = False,
     ) -> None:
         """Disarm a specific group."""
+        base = self._get_base_path()
         data = {
             "command": "DISARM",
             "ignoreProblems": ignore_problems,
         }
         await self.put(
-            f"/user/{self._user_id}/hubs/{hub_id}/groups/{group_id}/commands/arming",
+            f"{base}/hubs/{hub_id}/groups/{group_id}/commands/arming",
             json=data,
         )
         _LOGGER.info("Group %s disarmed", group_id)
@@ -354,6 +410,7 @@ class AjaxApi:
         additional_params: dict[str, Any] | None = None,
     ) -> None:
         """Send a command to a device."""
+        base = self._get_base_path()
         data = {
             "command": command,
             "deviceType": device_type,
@@ -362,7 +419,7 @@ class AjaxApi:
             data["additionalParam"] = additional_params
 
         await self.post(
-            f"/user/{self._user_id}/hubs/{hub_id}/devices/{device_id}/command",
+            f"{base}/hubs/{hub_id}/devices/{device_id}/command",
             json=data,
         )
         _LOGGER.info("Command %s sent to device %s", command, device_id)
@@ -381,14 +438,25 @@ class AjaxApi:
     # Hub commands
     async def mute_hub(self, hub_id: str) -> None:
         """Mute hub sound indication."""
+        base = self._get_base_path()
         await self.post(
-            f"/user/{self._user_id}/hubs/{hub_id}/commands/muteSoundIndication",
+            f"{base}/hubs/{hub_id}/commands/muteSoundIndication",
         )
         _LOGGER.info("Hub %s muted", hub_id)
 
     async def restore_after_alarm(self, hub_id: str) -> None:
         """Restore hub after alarm condition."""
+        base = self._get_base_path()
         await self.post(
-            f"/user/{self._user_id}/hubs/{hub_id}/commands/restoreAfterAlarmCondition",
+            f"{base}/hubs/{hub_id}/commands/restoreAfterAlarmCondition",
         )
         _LOGGER.info("Hub %s restored after alarm", hub_id)
+
+    # Validation method
+    async def validate_connection(self, hub_id: str) -> bool:
+        """Validate that we can connect to the API and access the hub."""
+        try:
+            hub = await self.get_hub(hub_id)
+            return bool(hub and hub.get("id") == hub_id)
+        except AjaxApiError:
+            return False
