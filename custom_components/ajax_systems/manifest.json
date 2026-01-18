@@ -1,0 +1,11 @@
+{
+  "domain": "ajax_systems",
+  "name": "Ajax Systems",
+  "codeowners": ["@exabird"],
+  "config_flow": true,
+  "documentation": "https://github.com/exabird/ha-ajax-systems",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/exabird/ha-ajax-systems/issues",
+  "requirements": ["aiohttp>=3.8.0"],
+  "version": "1.0.0"
+}

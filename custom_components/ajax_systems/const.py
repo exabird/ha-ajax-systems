@@ -1,0 +1,106 @@
+"""Constants for Ajax Systems integration."""
+
+DOMAIN = "ajax_systems"
+
+# API Configuration
+API_BASE_URL = "https://api.ajax.systems/api"
+API_TIMEOUT = 30
+
+# Authentication
+CONF_API_KEY = "api_key"
+CONF_USERNAME = "username"
+CONF_PASSWORD_HASH = "password_hash"
+CONF_SESSION_TOKEN = "session_token"
+CONF_REFRESH_TOKEN = "refresh_token"
+CONF_USER_ID = "user_id"
+CONF_TOKEN_EXPIRY = "token_expiry"
+
+# Configuration
+CONF_HUB_ID = "hub_id"
+CONF_SPACE_ID = "space_id"
+
+# Update intervals (seconds)
+DEFAULT_SCAN_INTERVAL = 30
+MIN_SCAN_INTERVAL = 10
+MAX_SCAN_INTERVAL = 300
+
+# Session token TTL (15 minutes, refresh at 10 minutes)
+SESSION_TOKEN_TTL = 15 * 60
+SESSION_TOKEN_REFRESH_MARGIN = 5 * 60
+
+# Platforms to set up
+PLATFORMS = [
+    "alarm_control_panel",
+    "binary_sensor",
+    "sensor",
+    "switch",
+]
+
+# Signal levels mapping
+SIGNAL_LEVEL_MAP = {
+    "NO_SIGNAL": 0,
+    "WEAK": 33,
+    "NORMAL": 66,
+    "STRONG": 100,
+}
+
+# Device type categories for entity creation
+MOTION_SENSORS = [
+    "MotionProtect",
+    "MotionProtectS",
+    "MotionProtectFibra",
+    "MotionProtectPlus",
+    "MotionProtectSPlus",
+    "MotionProtectPlusFibra",
+    "MotionProtectOutdoor",
+    "MotionCam",
+    "MotionCamPhod",
+    "MotionCamOutdoor",
+    "CombiProtect",
+    "CombiProtectS",
+    "CombiProtectFibra",
+]
+
+DOOR_SENSORS = [
+    "DoorProtect",
+    "DoorProtectS",
+    "DoorProtectU",
+    "DoorProtectFibra",
+    "DoorProtectPlus",
+    "DoorProtectSPlus",
+    "DoorProtectPlusFibra",
+]
+
+SMOKE_SENSORS = [
+    "FireProtect",
+    "FireProtectPlus",
+    "FireProtect2",
+    "FireProtect2Plus",
+]
+
+WATER_SENSORS = [
+    "LeaksProtect",
+    "WaterStop",
+]
+
+GLASS_BREAK_SENSORS = [
+    "GlassProtect",
+    "GlassProtectS",
+    "GlassProtectFibra",
+]
+
+SWITCHES = [
+    "Socket",
+    "WallSwitch",
+    "Relay",
+    "LightSwitch",
+]
+
+SIRENS = [
+    "HomeSiren",
+    "HomeSirenS",
+    "HomeSirenFibra",
+    "StreetSiren",
+    "StreetSirenPlus",
+    "StreetSirenFibra",
+]

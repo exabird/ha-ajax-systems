@@ -1,0 +1,115 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ajax Systems Authentication",
+        "description": "Enter your Ajax Systems API credentials. You need an API key from Ajax Systems developer portal.",
+        "data": {
+          "api_key": "API Key",
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "select_space": {
+        "title": "Select Space",
+        "description": "Multiple spaces found. Please select the space you want to configure.",
+        "data": {
+          "space_id": "Space"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Ajax Systems",
+        "description": "Your Ajax Systems authentication has expired. Please re-enter your credentials.",
+        "data": {
+          "api_key": "API Key",
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "auth_error": "Authentication failed. Please check your credentials.",
+      "cannot_connect": "Cannot connect to Ajax Systems API. Please check your internet connection.",
+      "no_spaces": "No spaces found for this account.",
+      "no_hubs": "No hubs found in the selected space.",
+      "invalid_space": "Invalid space selected.",
+      "unknown": "An unknown error occurred."
+    },
+    "abort": {
+      "already_configured": "This Ajax hub is already configured.",
+      "reauth_successful": "Re-authentication successful.",
+      "unknown": "An unknown error occurred."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ajax Systems Options",
+        "description": "Configure your Ajax Systems integration settings.",
+        "data": {
+          "scan_interval": "Update interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "How often to poll the Ajax API (in seconds). Minimum: 10s, Maximum: 300s (5 minutes)."
+        }
+      }
+    }
+  },
+  "entity": {
+    "alarm_control_panel": {
+      "ajax_alarm": {
+        "state": {
+          "disarmed": "Disarmed",
+          "armed_away": "Armed",
+          "armed_home": "Armed Home",
+          "armed_night": "Armed Night"
+        }
+      }
+    },
+    "binary_sensor": {
+      "motion": {
+        "name": "Motion"
+      },
+      "door": {
+        "name": "Door"
+      },
+      "smoke": {
+        "name": "Smoke"
+      },
+      "water": {
+        "name": "Water Leak"
+      },
+      "glass_break": {
+        "name": "Glass Break"
+      },
+      "tamper": {
+        "name": "Tamper"
+      },
+      "connectivity": {
+        "name": "Connectivity"
+      }
+    },
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "signal": {
+        "name": "Signal Strength"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "gsm_signal": {
+        "name": "GSM Signal"
+      },
+      "wifi_signal": {
+        "name": "WiFi Signal"
+      }
+    },
+    "switch": {
+      "switch": {
+        "name": "Switch"
+      }
+    }
+  }
+}
