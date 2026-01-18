@@ -39,6 +39,8 @@ class AjaxHub:
     firmware_version: str | None = None
     battery_level: int | None = None
     battery_state: str | None = None
+    gsm_signal: str | None = None
+    wifi_signal: str | None = None
     groups_enabled: bool = False
     raw_data: dict[str, Any] = field(default_factory=dict)
 
@@ -191,6 +193,13 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
         firmware = data.get("firmware", {})
         firmware_version = firmware.get("version")
 
+        # Parse GSM and WiFi signal levels
+        gsm = data.get("gsm", {})
+        gsm_signal = gsm.get("signalLevel") if gsm else None
+
+        wifi = data.get("wifi", {})
+        wifi_signal = wifi.get("signalLevel") if wifi else None
+
         return AjaxHub(
             id=data.get("id", ""),
             name=data.get("name", "Ajax Hub"),
@@ -201,6 +210,8 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             firmware_version=firmware_version,
             battery_level=battery_level,
             battery_state=battery_state,
+            gsm_signal=gsm_signal,
+            wifi_signal=wifi_signal,
             groups_enabled=data.get("groupsEnabled", False),
             raw_data=data,
         )

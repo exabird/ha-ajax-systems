@@ -37,7 +37,7 @@ async def async_setup_entry(
     # Hub sensors
     if coordinator.data.hub:
         hub = coordinator.data.hub
-        if hub.battery_charge is not None:
+        if hub.battery_level is not None:
             entities.append(AjaxHubBatterySensor(coordinator))
         if hub.gsm_signal is not None:
             entities.append(AjaxHubGsmSignalSensor(coordinator))
@@ -90,7 +90,7 @@ class AjaxHubBatterySensor(
     def native_value(self) -> int | None:
         """Return the battery level."""
         hub = self.coordinator.data.hub
-        return hub.battery_charge if hub else None
+        return hub.battery_level if hub else None
 
     @callback
     def _handle_coordinator_update(self) -> None:
