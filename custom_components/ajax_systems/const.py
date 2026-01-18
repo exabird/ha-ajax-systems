@@ -25,11 +25,6 @@ CONF_TOKEN_EXPIRY = "token_expiry"
 # Auth modes
 AUTH_MODE_COMPANY = "company"
 AUTH_MODE_USER = "user"
-AUTH_MODE_PREMIUM = "premium"  # Uses backend service
-
-# Backend Configuration
-BACKEND_URL = "https://ajax-premium.vercel.app"
-CONF_AJAX_EMAIL = "ajax_email"
 
 # Configuration
 CONF_HUB_ID = "hub_id"

@@ -2,9 +2,9 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/exabird/ha-ajax-systems)](https://github.com/exabird/ha-ajax-systems/releases)
-[![License](https://img.shields.io/github/license/exabird/ha-ajax-systems)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Custom Home Assistant integration for **Ajax Systems** security devices.
+**100% Open Source** Home Assistant integration for Ajax Systems security devices.
 
 ## Features
 
@@ -17,38 +17,37 @@ Custom Home Assistant integration for **Ajax Systems** security devices.
 - **Switches** - Socket, WallSwitch, Relay devices
 - **Battery & Signal Monitoring** - For all devices
 - **Temperature Sensors** - Devices with temperature capability
+- **Group/Zone Support** - Manage multiple security zones
 
-## Requirements
+## Prerequisites
 
-- **Ajax Systems API Key** - Required for all authentication methods
-- **Home Assistant 2024.1.0+**
-- **One of the following authentication methods:**
-  - **Company/PRO Mode**: Company ID + Company Token (for installers)
-  - **User Mode**: Email + Password (for end-users)
+You need API credentials from Ajax Systems to use this integration.
 
-## ⚠️ Important: API Access
+### How to Get API Access
 
-Ajax Systems operates on a **B2B model** - the Enterprise API is only available to approved security companies and installers, not directly to end-users.
+#### Option 1: Request User API Access (Recommended for home users)
 
-### How to get API access
+1. Go to **[ajax.systems/api-request](https://ajax.systems/api-request/)**
+2. Fill out the request form:
+   - Select "User API" as the access type
+   - Provide your contact information
+   - Describe your use case (e.g., "Home automation integration with Home Assistant")
+3. Wait for approval (typically 1-5 business days)
+4. Once approved, you'll receive an **API Key** by email
 
-**Option 1: Through your installer (Recommended)**
-- Contact your Ajax security system installer
-- Ask them to provide you with API credentials (API Key + Company Token)
-- They can generate these from the Ajax PRO Dashboard
+#### Option 2: Through Your Installer
 
-**Option 2: Request access as a company**
-- If you are a security company/installer, apply at: [ajax.systems/api-request](https://ajax.systems/api-request/)
-- Requirements: Must manage or plan to manage thousands of Ajax systems
+If you have a security company managing your Ajax system:
+- Contact your Ajax installer
+- Ask them to provide API credentials from the PRO Dashboard
+- They can generate Company ID and Company Token for you
 
-### Authentication Modes
+### What Credentials Do I Need?
 
-| Mode | Who can use it | Required credentials |
-|------|----------------|---------------------|
-| **Company/PRO** | Installers with API access | API Key + Company ID + Company Token |
-| **User** | End-users (with API Key from installer) | API Key + Email + Password |
-
-**Note:** Both modes require an API Key, which is only provided to approved companies/installers. End-users need to obtain the API Key from their installer.
+| Authentication Mode | Who Should Use | Required Credentials |
+|---------------------|----------------|---------------------|
+| **User API** | Home users with API access | API Key + Email + Password |
+| **Company/PRO API** | Installers with PRO dashboard | API Key + Company ID + Company Token |
 
 ## Installation
 
@@ -73,11 +72,16 @@ Ajax Systems operates on a **B2B model** - the Enterprise API is only available 
 2. Click **Add Integration**
 3. Search for "Ajax Systems"
 4. Choose your authentication mode:
-   - **Company/PRO**: For installers with API dashboard access
-   - **User**: For end-users with API Key from their installer
+   - **User API** - For home users with API key
+   - **Company/PRO API** - For installers
 5. Enter your credentials
 6. Select your hub
-7. Done!
+
+### Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| Update Interval | 30s | How often to poll the Ajax API (10-300 seconds) |
 
 ## Supported Devices
 
@@ -85,18 +89,24 @@ Ajax Systems operates on a **B2B model** - the Enterprise API is only available 
 - Hub, Hub 2, Hub Plus, Hub 2 Plus
 - Hub Hybrid, Hub 4G variants
 
-### Sensors
-- MotionProtect (all variants)
-- DoorProtect (all variants)
-- FireProtect, FireProtect 2
-- LeaksProtect, WaterStop
-- GlassProtect
-- CombiProtect
+### Motion Sensors
+- MotionProtect (all variants: S, Plus, Fibra, Outdoor)
+- MotionCam (all variants: Phod, Outdoor)
+- CombiProtect (all variants)
 
-### Control Devices
-- Keypad (all variants)
-- Button, DoubleButton
-- SpaceControl
+### Door/Window Sensors
+- DoorProtect (all variants: S, Plus, U, Fibra)
+
+### Fire/Smoke Sensors
+- FireProtect, FireProtect Plus
+- FireProtect 2, FireProtect 2 Plus
+
+### Water Sensors
+- LeaksProtect
+- WaterStop
+
+### Glass Break Sensors
+- GlassProtect (all variants)
 
 ### Switches & Relays
 - Socket
@@ -105,36 +115,82 @@ Ajax Systems operates on a **B2B model** - the Enterprise API is only available 
 - LightSwitch
 
 ### Sirens
-- HomeSiren
+- HomeSiren (all variants)
 - StreetSiren (all variants)
 
-## Services
+### Keypads
+- Keypad (all variants)
+- KeypadTouchscreen
 
-### `ajax_systems.arm`
-Arm the security system.
+## Example Automations
 
-### `ajax_systems.disarm`
-Disarm the security system.
+### Arm when everyone leaves
+```yaml
+automation:
+  - alias: "Arm Ajax when leaving"
+    trigger:
+      - platform: state
+        entity_id: zone.home
+        to: "0"
+    action:
+      - service: alarm_control_panel.alarm_arm_away
+        target:
+          entity_id: alarm_control_panel.ajax_hub
+```
+
+### Motion notification while armed
+```yaml
+automation:
+  - alias: "Motion alert when armed"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.motionprotect_motion
+        to: "on"
+    condition:
+      - condition: state
+        entity_id: alarm_control_panel.ajax_hub
+        state: "armed_away"
+    action:
+      - service: notify.mobile_app
+        data:
+          message: "Motion detected while system is armed!"
+```
 
 ## Troubleshooting
 
-### Authentication Failed
-- Verify your API key is correct
-- For Company mode: Check your Company ID and Company Token
-- For User mode: Check your email and password
+### "Authentication Failed"
+- Verify your API Key is correct and approved
+- Check your email/password (User mode) or Company credentials (PRO mode)
+- Ensure your account has access to the hub
 
-### No Devices Found
+### "No Hubs Found"
 - Verify your hub is online in the Ajax app
-- Check that devices are properly paired with your hub
+- Check that your API credentials have access to this hub
 
 ### Slow Updates
-- Adjust the scan interval in integration options
-- Default is 30 seconds, minimum 10 seconds
+- Increase the update interval in integration options
+- Check your internet connection
+- Verify Ajax Systems API is accessible
+
+### Connection Errors
+- Check your internet connection
+- Try restarting Home Assistant
+- Re-authenticate the integration if needed
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
 
 ## Support
 
-- [GitHub Issues](https://github.com/exabird/ha-ajax-systems/issues)
-- [Home Assistant Community](https://community.home-assistant.io/)
+- **Issues**: [GitHub Issues](https://github.com/exabird/ha-ajax-systems/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/exabird/ha-ajax-systems/discussions)
 
 ## License
 
@@ -143,3 +199,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Disclaimer
 
 This integration is not officially affiliated with or endorsed by Ajax Systems. Use at your own risk.
+
+---
+
+Made with ❤️ for the Home Assistant community

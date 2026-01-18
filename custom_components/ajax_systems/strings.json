@@ -3,16 +3,18 @@
     "step": {
       "user": {
         "title": "Ajax Systems",
-        "description": "Choose how you want to connect to your Ajax security system.",
+        "description": "Choose your authentication method.",
         "data": {
-          "auth_mode": "Connection Mode"
+          "auth_mode": "Authentication Mode"
         }
       },
-      "premium_auth": {
-        "title": "Connect to Ajax",
-        "description": "Enter your Ajax account email. This is the same email you use in the Ajax app.\n\nNo password required - your credentials stay private!\n\n[Get Premium features]({premium_url})",
+      "user_auth": {
+        "title": "User Authentication",
+        "description": "Enter your Ajax API credentials.\n\nYou need an API key from Ajax Systems. See the [documentation]({docs_url}) for how to request API access.",
         "data": {
-          "ajax_email": "Ajax Account Email"
+          "api_key": "API Key",
+          "username": "Email",
+          "password": "Password"
         }
       },
       "company_auth": {
@@ -22,15 +24,6 @@
           "api_key": "API Key",
           "company_id": "Company ID",
           "company_token": "Company Token"
-        }
-      },
-      "user_auth": {
-        "title": "User API Authentication",
-        "description": "Enter your Ajax API credentials and account details.",
-        "data": {
-          "api_key": "API Key",
-          "username": "Email",
-          "password": "Password"
         }
       },
       "select_hub": {
@@ -44,7 +37,6 @@
         "title": "Re-authenticate",
         "description": "Please re-enter your credentials.",
         "data": {
-          "ajax_email": "Ajax Account Email",
           "api_key": "API Key",
           "company_id": "Company ID",
           "company_token": "Company Token",

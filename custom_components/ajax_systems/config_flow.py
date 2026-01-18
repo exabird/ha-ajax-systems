@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
@@ -14,13 +13,9 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import AjaxApi, AjaxApiError, AjaxAuthError
-from .backend_api import BackendApi, BackendApiError
 from .const import (
     AUTH_MODE_COMPANY,
-    AUTH_MODE_PREMIUM,
     AUTH_MODE_USER,
-    BACKEND_URL,
-    CONF_AJAX_EMAIL,
     CONF_API_KEY,
     CONF_AUTH_MODE,
     CONF_COMPANY_ID,
@@ -41,25 +36,22 @@ _LOGGER = logging.getLogger(__name__)
 class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Ajax Systems."""
 
-    VERSION = 2  # Bumped for new auth mode
+    VERSION = 3
 
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._api: AjaxApi | None = None
-        self._backend_api: BackendApi | None = None
-        self._auth_mode: str | None = None
-        # Premium auth (backend)
-        self._ajax_email: str | None = None
-        # Company auth
-        self._api_key: str | None = None
-        self._company_id: str | None = None
-        self._company_token: str | None = None
+        self._auth_mode: str = AUTH_MODE_USER
         # User auth
+        self._api_key: str | None = None
         self._username: str | None = None
         self._password_hash: str | None = None
         self._user_id: str | None = None
         self._session_token: str | None = None
         self._refresh_token: str | None = None
+        # Company auth
+        self._company_id: str | None = None
+        self._company_token: str | None = None
         # Common
         self._hubs: list[dict[str, Any]] = []
         self._selected_hub: dict[str, Any] | None = None
@@ -70,9 +62,7 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step - choose auth mode."""
         if user_input is not None:
             self._auth_mode = user_input[CONF_AUTH_MODE]
-            if self._auth_mode == AUTH_MODE_PREMIUM:
-                return await self.async_step_premium_auth()
-            elif self._auth_mode == AUTH_MODE_COMPANY:
+            if self._auth_mode == AUTH_MODE_COMPANY:
                 return await self.async_step_company_auth()
             return await self.async_step_user_auth()
 
@@ -80,120 +70,14 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_AUTH_MODE, default=AUTH_MODE_PREMIUM): vol.In(
+                    vol.Required(CONF_AUTH_MODE, default=AUTH_MODE_USER): vol.In(
                         {
-                            AUTH_MODE_PREMIUM: "Standard (Email only - Recommended)",
-                            AUTH_MODE_COMPANY: "Advanced: Company/PRO (Own API credentials)",
-                            AUTH_MODE_USER: "Advanced: User API (Own API credentials)",
+                            AUTH_MODE_USER: "User API (Email + Password + API Key)",
+                            AUTH_MODE_COMPANY: "Company/PRO API (Company credentials)",
                         }
                     ),
                 }
             ),
-        )
-
-    async def async_step_premium_auth(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle premium/backend authentication."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            self._ajax_email = user_input[CONF_AJAX_EMAIL].lower().strip()
-
-            session = async_get_clientsession(self.hass)
-            self._backend_api = BackendApi(
-                session=session,
-                ajax_email=self._ajax_email,
-                backend_url=BACKEND_URL,
-            )
-
-            try:
-                # Check premium status and get hubs
-                await self._backend_api.check_premium_status()
-                self._hubs = await self._backend_api.get_hubs()
-
-                if not self._hubs:
-                    errors["base"] = "no_hubs"
-                else:
-                    return await self.async_step_select_hub()
-
-            except BackendApiError as err:
-                _LOGGER.error("Backend API error: %s", err)
-                errors["base"] = "cannot_connect"
-            except Exception as err:
-                _LOGGER.exception("Unexpected error: %s", err)
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="premium_auth",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_AJAX_EMAIL): str,
-                }
-            ),
-            errors=errors,
-            description_placeholders={
-                "premium_url": BACKEND_URL,
-            },
-        )
-
-    async def async_step_company_auth(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle company authentication."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            self._api_key = user_input[CONF_API_KEY]
-            self._company_id = user_input[CONF_COMPANY_ID]
-            self._company_token = user_input[CONF_COMPANY_TOKEN]
-
-            session = async_get_clientsession(self.hass)
-            self._api = AjaxApi(
-                session=session,
-                api_key=self._api_key,
-                company_id=self._company_id,
-                company_token=self._company_token,
-            )
-
-            try:
-                # Get spaces and extract hubs
-                spaces = await self._api.get_spaces()
-                self._hubs = []
-                for space in spaces:
-                    for hub in space.get("hubs", []):
-                        self._hubs.append({
-                            "id": hub.get("id"),
-                            "name": hub.get("name"),
-                            "spaceId": space.get("id"),
-                            "spaceName": space.get("name"),
-                        })
-
-                if not self._hubs:
-                    errors["base"] = "no_hubs"
-                else:
-                    return await self.async_step_select_hub()
-
-            except AjaxAuthError as err:
-                _LOGGER.error("Authentication failed: %s", err)
-                errors["base"] = "auth_error"
-            except AjaxApiError as err:
-                _LOGGER.error("API error: %s", err)
-                errors["base"] = "cannot_connect"
-            except Exception as err:
-                _LOGGER.exception("Unexpected error: %s", err)
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="company_auth",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_API_KEY): str,
-                    vol.Required(CONF_COMPANY_ID): str,
-                    vol.Required(CONF_COMPANY_TOKEN): str,
-                }
-            ),
-            errors=errors,
         )
 
     async def async_step_user_auth(
@@ -260,6 +144,65 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_company_auth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle company authentication."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            self._api_key = user_input[CONF_API_KEY]
+            self._company_id = user_input[CONF_COMPANY_ID]
+            self._company_token = user_input[CONF_COMPANY_TOKEN]
+
+            session = async_get_clientsession(self.hass)
+            self._api = AjaxApi(
+                session=session,
+                api_key=self._api_key,
+                company_id=self._company_id,
+                company_token=self._company_token,
+            )
+
+            try:
+                # Get spaces and extract hubs
+                spaces = await self._api.get_spaces()
+                self._hubs = []
+                for space in spaces:
+                    for hub in space.get("hubs", []):
+                        self._hubs.append({
+                            "id": hub.get("id"),
+                            "name": hub.get("name"),
+                            "spaceId": space.get("id"),
+                            "spaceName": space.get("name"),
+                        })
+
+                if not self._hubs:
+                    errors["base"] = "no_hubs"
+                else:
+                    return await self.async_step_select_hub()
+
+            except AjaxAuthError as err:
+                _LOGGER.error("Authentication failed: %s", err)
+                errors["base"] = "auth_error"
+            except AjaxApiError as err:
+                _LOGGER.error("API error: %s", err)
+                errors["base"] = "cannot_connect"
+            except Exception as err:
+                _LOGGER.exception("Unexpected error: %s", err)
+                errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="company_auth",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_API_KEY): str,
+                    vol.Required(CONF_COMPANY_ID): str,
+                    vol.Required(CONF_COMPANY_TOKEN): str,
+                }
+            ),
+            errors=errors,
+        )
+
     async def async_step_select_hub(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -321,19 +264,16 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
         data = {
             CONF_AUTH_MODE: self._auth_mode,
             CONF_HUB_ID: hub_id,
+            CONF_API_KEY: self._api_key,
         }
 
         if space_id:
             data[CONF_SPACE_ID] = space_id
 
-        if self._auth_mode == AUTH_MODE_PREMIUM:
-            data[CONF_AJAX_EMAIL] = self._ajax_email
-        elif self._auth_mode == AUTH_MODE_COMPANY:
-            data[CONF_API_KEY] = self._api_key
+        if self._auth_mode == AUTH_MODE_COMPANY:
             data[CONF_COMPANY_ID] = self._company_id
             data[CONF_COMPANY_TOKEN] = self._company_token
         else:  # AUTH_MODE_USER
-            data[CONF_API_KEY] = self._api_key
             data[CONF_USERNAME] = self._username
             data[CONF_PASSWORD_HASH] = self._password_hash
             data[CONF_USER_ID] = self._user_id
@@ -349,7 +289,7 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry_data: dict[str, Any]
     ) -> FlowResult:
         """Handle re-authentication."""
-        self._auth_mode = entry_data.get(CONF_AUTH_MODE, AUTH_MODE_PREMIUM)
+        self._auth_mode = entry_data.get(CONF_AUTH_MODE, AUTH_MODE_USER)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -362,20 +302,15 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
             session = async_get_clientsession(self.hass)
 
             try:
-                if self._auth_mode == AUTH_MODE_PREMIUM:
-                    api = BackendApi(
-                        session=session,
-                        ajax_email=user_input[CONF_AJAX_EMAIL],
-                        backend_url=BACKEND_URL,
-                    )
-                    await api.check_premium_status()
-                elif self._auth_mode == AUTH_MODE_COMPANY:
+                if self._auth_mode == AUTH_MODE_COMPANY:
                     api = AjaxApi(
                         session=session,
                         api_key=user_input[CONF_API_KEY],
                         company_id=user_input[CONF_COMPANY_ID],
                         company_token=user_input[CONF_COMPANY_TOKEN],
                     )
+                    # Test connection
+                    await api.get_spaces()
                 else:
                     api = AjaxApi(
                         session=session,
@@ -393,8 +328,14 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.context["entry_id"]
                 )
                 if entry:
-                    new_data = {**entry.data, **user_input}
-                    if self._auth_mode == AUTH_MODE_USER:
+                    new_data = {**entry.data}
+                    new_data[CONF_API_KEY] = user_input[CONF_API_KEY]
+
+                    if self._auth_mode == AUTH_MODE_COMPANY:
+                        new_data[CONF_COMPANY_ID] = user_input[CONF_COMPANY_ID]
+                        new_data[CONF_COMPANY_TOKEN] = user_input[CONF_COMPANY_TOKEN]
+                    else:
+                        new_data[CONF_USERNAME] = user_input[CONF_USERNAME]
                         new_data[CONF_PASSWORD_HASH] = AjaxApi.hash_password(
                             user_input[CONF_PASSWORD]
                         )
@@ -407,21 +348,15 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 return self.async_abort(reason="reauth_successful")
 
-            except (AjaxAuthError, BackendApiError):
+            except AjaxAuthError:
                 errors["base"] = "auth_error"
-            except (AjaxApiError, BackendApiError):
+            except AjaxApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 errors["base"] = "unknown"
 
         # Show appropriate form based on auth mode
-        if self._auth_mode == AUTH_MODE_PREMIUM:
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_AJAX_EMAIL): str,
-                }
-            )
-        elif self._auth_mode == AUTH_MODE_COMPANY:
+        if self._auth_mode == AUTH_MODE_COMPANY:
             schema = vol.Schema(
                 {
                     vol.Required(CONF_API_KEY): str,
