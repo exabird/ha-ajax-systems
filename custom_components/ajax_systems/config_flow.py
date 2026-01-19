@@ -59,31 +59,17 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step - choose auth mode."""
-        if user_input is not None:
-            self._auth_mode = user_input[CONF_AUTH_MODE]
-            if self._auth_mode == AUTH_MODE_COMPANY:
-                return await self.async_step_company_auth()
-            return await self.async_step_user_auth()
-
-        return self.async_show_form(
+        """Handle the initial step - show menu to choose auth mode."""
+        return self.async_show_menu(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_AUTH_MODE, default=AUTH_MODE_USER): vol.In(
-                        {
-                            AUTH_MODE_USER: "User API (Email + Password + API Key)",
-                            AUTH_MODE_COMPANY: "Company/PRO API (Company credentials)",
-                        }
-                    ),
-                }
-            ),
+            menu_options=["user_auth", "company_auth"],
         )
 
     async def async_step_user_auth(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle user authentication."""
+        self._auth_mode = AUTH_MODE_USER
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -148,6 +134,7 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle company authentication."""
+        self._auth_mode = AUTH_MODE_COMPANY
         errors: dict[str, str] = {}
 
         if user_input is not None:

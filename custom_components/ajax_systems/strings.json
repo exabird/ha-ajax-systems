@@ -4,8 +4,9 @@
       "user": {
         "title": "Ajax Systems",
         "description": "Choose your authentication method.",
-        "data": {
-          "auth_mode": "Authentication Mode"
+        "menu_options": {
+          "user_auth": "User Account (Email + Password)",
+          "company_auth": "Company/PRO Account (API Credentials)"
         }
       },
       "user_auth": {
