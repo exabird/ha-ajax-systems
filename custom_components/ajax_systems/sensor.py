@@ -200,7 +200,7 @@ class AjaxDeviceBatterySensor(
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.id)},
-            name=device.name,
+            name=device.display_name,
             manufacturer="Ajax Systems",
             model=device.device_type,
             via_device=(DOMAIN, coordinator.hub_id),
@@ -253,7 +253,7 @@ class AjaxDeviceSignalSensor(
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.id)},
-            name=device.name,
+            name=device.display_name,
             manufacturer="Ajax Systems",
             model=device.device_type,
             via_device=(DOMAIN, coordinator.hub_id),
@@ -267,9 +267,8 @@ class AjaxDeviceSignalSensor(
     def native_value(self) -> int | None:
         """Return the signal strength."""
         device = self._get_device()
-        if device and device.signal_strength:
-            return SIGNAL_LEVEL_MAP.get(device.signal_strength, 0)
-        return None
+        # signal_strength is already converted to percentage in coordinator
+        return device.signal_strength if device else None
 
     @property
     def available(self) -> bool:
@@ -307,7 +306,7 @@ class AjaxDeviceTemperatureSensor(
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.id)},
-            name=device.name,
+            name=device.display_name,
             manufacturer="Ajax Systems",
             model=device.device_type,
             via_device=(DOMAIN, coordinator.hub_id),

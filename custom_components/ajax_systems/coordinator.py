@@ -53,6 +53,7 @@ class AjaxDevice:
     name: str
     device_type: str
     room_id: str | None
+    room_name: str | None
     group_id: str | None
     online: bool
     battery_level: int | None
@@ -63,6 +64,13 @@ class AjaxDevice:
     bypassed: bool
     firmware_version: str | None = None
     raw_data: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def display_name(self) -> str:
+        """Return display name with room if available."""
+        if self.room_name:
+            return f"{self.name} - {self.room_name}"
+        return self.name
 
     @property
     def is_motion_sensor(self) -> bool:
@@ -107,12 +115,22 @@ class AjaxGroup:
 
 
 @dataclass
+class AjaxRoom:
+    """Representation of an Ajax room."""
+
+    id: str
+    name: str
+    raw_data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class AjaxData:
     """Data container for Ajax Systems."""
 
     hub: AjaxHub | None = None
     devices: dict[str, AjaxDevice] = field(default_factory=dict)
     groups: dict[str, AjaxGroup] = field(default_factory=dict)
+    rooms: dict[str, AjaxRoom] = field(default_factory=dict)
 
 
 class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
@@ -149,12 +167,22 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             self._last_hub_data = hub_data
             hub = self._parse_hub(hub_data)
 
+            # Get rooms
+            rooms_data = await self.api.get_hub_rooms(self.hub_id)
+            rooms = {}
+            room_names = {}  # id -> name mapping for device parsing
+
+            for room_data in rooms_data:
+                room = self._parse_room(room_data)
+                rooms[room.id] = room
+                room_names[room.id] = room.name
+
             # Get devices
             devices_data = await self.api.get_hub_devices(self.hub_id, enrich=True)
             devices = {}
 
             for device_data in devices_data:
-                device = self._parse_device(device_data)
+                device = self._parse_device(device_data, room_names)
                 devices[device.id] = device
 
             # Parse groups if enabled
@@ -168,6 +196,7 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
                 hub=hub,
                 devices=devices,
                 groups=groups,
+                rooms=rooms,
             )
 
         except AjaxAuthError as err:
@@ -216,7 +245,15 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             raw_data=data,
         )
 
-    def _parse_device(self, data: dict[str, Any]) -> AjaxDevice:
+    def _parse_room(self, data: dict[str, Any]) -> AjaxRoom:
+        """Parse room data into AjaxRoom object."""
+        return AjaxRoom(
+            id=data.get("id", ""),
+            name=data.get("roomName", f"Room {data.get('id', '')}"),
+            raw_data=data,
+        )
+
+    def _parse_device(self, data: dict[str, Any], room_names: dict[str, str] | None = None) -> AjaxDevice:
         """Parse device data into AjaxDevice object."""
         model = data.get("model", {})
 
@@ -232,11 +269,15 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
         bypass_state = model.get("bypassState", [])
         bypassed = bool(bypass_state)
 
+        room_id = data.get("roomId", model.get("roomId"))
+        room_name = room_names.get(room_id) if room_names and room_id else None
+
         return AjaxDevice(
             id=data.get("id", model.get("id", "")),
             name=device_name,
             device_type=device_type,
-            room_id=data.get("roomId", model.get("roomId")),
+            room_id=room_id,
+            room_name=room_name,
             group_id=data.get("groupId", model.get("groupId")),
             online=model.get("online", data.get("online", False)),
             battery_level=battery_level,

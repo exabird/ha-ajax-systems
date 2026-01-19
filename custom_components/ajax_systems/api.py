@@ -324,6 +324,12 @@ class AjaxApi:
         )
         return result if isinstance(result, list) else result.get("devices", result.get("deviceInfos", []))
 
+    async def get_hub_rooms(self, hub_id: str) -> list[dict[str, Any]]:
+        """Get all rooms for a hub."""
+        base = self._get_base_path()
+        result = await self.get(f"{base}/hubs/{hub_id}/rooms")
+        return result if isinstance(result, list) else result.get("rooms", [])
+
     # Arming methods
     async def arm_hub(self, hub_id: str, ignore_problems: bool = False) -> None:
         """Arm the hub."""

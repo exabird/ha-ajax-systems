@@ -53,7 +53,7 @@ class AjaxSwitch(CoordinatorEntity[AjaxDataUpdateCoordinator], SwitchEntity):
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.id)},
-            name=device.name,
+            name=device.display_name,
             manufacturer="Ajax Systems",
             model=device.device_type,
             via_device=(DOMAIN, coordinator.hub_id),
