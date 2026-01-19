@@ -151,17 +151,29 @@ class AjaxSystemsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
             try:
-                # Get spaces and extract hubs
-                spaces = await self._api.get_spaces()
+                # For company auth, get hubs directly then fetch details
+                hub_list = await self._api.get_hubs()
                 self._hubs = []
-                for space in spaces:
-                    for hub in space.get("hubs", []):
-                        self._hubs.append({
-                            "id": hub.get("id"),
-                            "name": hub.get("name"),
-                            "spaceId": space.get("id"),
-                            "spaceName": space.get("name"),
-                        })
+                for hub_info in hub_list:
+                    hub_id = hub_info.get("hubId")
+                    if hub_id:
+                        try:
+                            # Get full hub details to get name
+                            hub_details = await self._api.get_hub(hub_id)
+                            self._hubs.append({
+                                "id": hub_id,
+                                "name": hub_details.get("name", f"Hub {hub_id}"),
+                                "spaceId": None,
+                                "spaceName": None,
+                            })
+                        except Exception as hub_err:
+                            _LOGGER.warning("Could not fetch details for hub %s: %s", hub_id, hub_err)
+                            self._hubs.append({
+                                "id": hub_id,
+                                "name": f"Hub {hub_id}",
+                                "spaceId": None,
+                                "spaceName": None,
+                            })
 
                 if not self._hubs:
                     errors["base"] = "no_hubs"

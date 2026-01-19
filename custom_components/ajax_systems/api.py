@@ -302,6 +302,13 @@ class AjaxApi:
         return await self.get(f"{base}/spaces/{space_id}")
 
     # Hub methods
+    async def get_hubs(self) -> list[dict[str, Any]]:
+        """Get all hubs for company auth mode."""
+        if not self._is_company_auth:
+            raise AjaxApiError("get_hubs() is only available in company auth mode")
+        result = await self.get(f"/company/{self._company_id}/hubs")
+        return result if isinstance(result, list) else result.get("hubs", [])
+
     async def get_hub(self, hub_id: str) -> dict[str, Any]:
         """Get hub details."""
         base = self._get_base_path()
