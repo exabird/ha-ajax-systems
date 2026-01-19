@@ -177,6 +177,24 @@ automation:
 - Try restarting Home Assistant
 - Re-authenticate the integration if needed
 
+## API Documentation
+
+This integration uses the Ajax Systems API. Complete documentation is available in the [docs](./docs/) folder:
+
+- **[API Reference](./docs/API_REFERENCE.md)** - Complete API endpoint documentation
+- **[Authentication Guide](./docs/AUTHENTICATION.md)** - Detailed authentication modes and flows
+- **[Device Types](./docs/DEVICE_TYPES.md)** - All supported device types and their properties
+- **[Code Examples](./docs/EXAMPLES.md)** - Python, JavaScript, and cURL examples
+
+### Quick API Overview
+
+| Aspect | Details |
+|--------|---------|
+| Base URL | `https://api.ajax.systems/api` |
+| Auth Modes | User (session token) / Company (long-lived token) |
+| Session TTL | 15 minutes (refresh at 10 min) |
+| Password | SHA-256 hashed |
+
 ## Contributing
 
 Contributions are welcome! Please:

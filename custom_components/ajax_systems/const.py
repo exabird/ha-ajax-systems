@@ -31,8 +31,8 @@ CONF_HUB_ID = "hub_id"
 CONF_SPACE_ID = "space_id"
 
 # Update intervals (seconds)
-DEFAULT_SCAN_INTERVAL = 30
-MIN_SCAN_INTERVAL = 10
+DEFAULT_SCAN_INTERVAL = 3
+MIN_SCAN_INTERVAL = 3
 MAX_SCAN_INTERVAL = 300
 
 # Session token TTL (15 minutes, refresh at 10 minutes)

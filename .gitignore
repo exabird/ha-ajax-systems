@@ -75,6 +75,16 @@ venv.bak/
 secrets.yaml
 *.secret
 .env.local
+.env.test
+
+# Test output files
+hub_data.json
+devices_data.json
+*_data.json
+
+# Test files with credentials
+test_*.py
+!test_*.py.example
 
 # Home Assistant
 config/

@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import AjaxDataUpdateCoordinator
+from .coordinator import AjaxDataUpdateCoordinator, AjaxGroup
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,8 +36,8 @@ async def async_setup_entry(
         entities.append(AjaxAlarmControlPanel(coordinator))
 
     # Add group alarm panels if groups mode is enabled
-    for group_id, group_data in coordinator.data.groups.items():
-        entities.append(AjaxGroupAlarmControlPanel(coordinator, group_id, group_data))
+    for group_id, group in coordinator.data.groups.items():
+        entities.append(AjaxGroupAlarmControlPanel(coordinator, group_id, group))
 
     async_add_entities(entities)
 
@@ -125,7 +125,7 @@ class AjaxGroupAlarmControlPanel(
         self,
         coordinator: AjaxDataUpdateCoordinator,
         group_id: str,
-        group_data: dict[str, Any],
+        group: AjaxGroup,
     ) -> None:
         """Initialize the group alarm control panel."""
         super().__init__(coordinator)
@@ -133,7 +133,7 @@ class AjaxGroupAlarmControlPanel(
         hub = coordinator.data.hub
 
         self._attr_unique_id = f"{DOMAIN}_{hub.id}_group_{group_id}"
-        self._attr_name = group_data.get("name", f"Group {group_id}")
+        self._attr_name = group.name
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, hub.id)},
@@ -145,12 +145,12 @@ class AjaxGroupAlarmControlPanel(
     @property
     def alarm_state(self) -> AlarmControlPanelState | None:
         """Return the state of the group alarm."""
-        group_data = self.coordinator.data.groups.get(self._group_id, {})
-        arm_state = group_data.get("armState", "DISARMED")
-        night_mode = group_data.get("nightMode", False)
+        group = self.coordinator.data.groups.get(self._group_id)
+        if not group:
+            return None
 
-        if arm_state.upper() == "ARMED":
-            if night_mode:
+        if group.armed:
+            if group.night_mode:
                 return AlarmControlPanelState.ARMED_NIGHT
             return AlarmControlPanelState.ARMED_AWAY
 
