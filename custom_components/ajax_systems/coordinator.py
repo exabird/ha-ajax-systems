@@ -4,14 +4,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import AjaxApi, AjaxApiError, AjaxAuthError
 from .const import (
+    CONF_AWS_ACCESS_KEY,
+    CONF_AWS_REGION,
+    CONF_AWS_SECRET_KEY,
+    CONF_SQS_ENABLED,
+    CONF_SQS_QUEUE_URL,
+    DEFAULT_AWS_REGION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     DOOR_SENSORS,
@@ -22,6 +28,9 @@ from .const import (
     SWITCHES,
     WATER_SENSORS,
 )
+
+if TYPE_CHECKING:
+    from .sqs_listener import AjaxSqsEvent, AjaxSqsListener
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,8 +158,16 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
         self.api = api
         self.hub_id = hub_id
         self._last_hub_data: dict[str, Any] = {}
+        self._sqs_listener: AjaxSqsListener | None = None
 
         scan_interval = entry.options.get("scan_interval", DEFAULT_SCAN_INTERVAL)
+
+        # Check if SQS is enabled (stored in options)
+        sqs_enabled = entry.options.get(CONF_SQS_ENABLED, False)
+        if sqs_enabled:
+            # When SQS is enabled, use longer polling interval as fallback
+            scan_interval = max(scan_interval, 30)
+            _LOGGER.info("SQS enabled, using %s seconds polling as fallback", scan_interval)
 
         super().__init__(
             hass,
@@ -158,6 +175,10 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
         )
+
+        # Initialize SQS listener if enabled
+        if sqs_enabled:
+            self._init_sqs_listener(entry)
 
     async def _async_update_data(self) -> AjaxData:
         """Fetch data from API."""
@@ -379,3 +400,107 @@ class AjaxDataUpdateCoordinator(DataUpdateCoordinator[AjaxData]):
                 state,
             )
             await self.async_request_refresh()
+
+    async def async_set_hub_night_mode(
+        self,
+        enabled: bool,
+        ignore_problems: bool = False,
+    ) -> None:
+        """Set night mode for the hub."""
+        await self.api.set_hub_night_mode(self.hub_id, enabled, ignore_problems)
+        await self.async_request_refresh()
+
+    # SQS Listener methods
+    def _init_sqs_listener(self, entry: ConfigEntry) -> None:
+        """Initialize the SQS listener."""
+        try:
+            from .sqs_listener import AjaxSqsListener
+
+            # SQS config is stored in options
+            queue_url = entry.options.get(CONF_SQS_QUEUE_URL)
+            aws_access_key = entry.options.get(CONF_AWS_ACCESS_KEY)
+            aws_secret_key = entry.options.get(CONF_AWS_SECRET_KEY)
+            aws_region = entry.options.get(CONF_AWS_REGION, DEFAULT_AWS_REGION)
+
+            if not all([queue_url, aws_access_key, aws_secret_key]):
+                _LOGGER.warning("SQS enabled but missing credentials")
+                return
+
+            self._sqs_listener = AjaxSqsListener(
+                hass=self.hass,
+                queue_url=queue_url,
+                aws_access_key=aws_access_key,
+                aws_secret_key=aws_secret_key,
+                region=aws_region,
+                hub_id=self.hub_id,
+            )
+            self._sqs_listener.register_callback(self._handle_sqs_event)
+            _LOGGER.info("SQS listener initialized for hub %s", self.hub_id)
+
+        except ImportError as err:
+            _LOGGER.warning("Could not import SQS listener: %s", err)
+        except Exception as err:
+            _LOGGER.error("Error initializing SQS listener: %s", err)
+
+    async def async_start_sqs_listener(self) -> None:
+        """Start the SQS listener."""
+        if self._sqs_listener:
+            await self._sqs_listener.start()
+
+    async def async_stop_sqs_listener(self) -> None:
+        """Stop the SQS listener."""
+        if self._sqs_listener:
+            await self._sqs_listener.stop()
+
+    @callback
+    def _handle_sqs_event(self, event: AjaxSqsEvent) -> None:
+        """Handle an event from SQS."""
+        from .sqs_listener import (
+            EVENT_TYPE_ARM,
+            EVENT_TYPE_DEVICE_STATE,
+            EVENT_TYPE_DEVICE_TRIGGERED,
+            EVENT_TYPE_DISARM,
+            EVENT_TYPE_NIGHT_MODE,
+        )
+
+        _LOGGER.debug(
+            "Processing SQS event: type=%s, device=%s",
+            event.event_type,
+            event.device_id,
+        )
+
+        # Update local state based on event type
+        if event.event_type in (EVENT_TYPE_ARM, EVENT_TYPE_DISARM, EVENT_TYPE_NIGHT_MODE):
+            # Hub arming state changed - trigger a refresh
+            self.hass.async_create_task(self.async_request_refresh())
+
+        elif event.event_type in (EVENT_TYPE_DEVICE_STATE, EVENT_TYPE_DEVICE_TRIGGERED):
+            # Device state changed - update local data and notify listeners
+            if event.device_id and self.data and event.device_id in self.data.devices:
+                device = self.data.devices[event.device_id]
+                if event.triggered is not None:
+                    # Create updated device with new triggered state
+                    self.data.devices[event.device_id] = AjaxDevice(
+                        id=device.id,
+                        name=device.name,
+                        device_type=device.device_type,
+                        room_id=device.room_id,
+                        room_name=device.room_name,
+                        group_id=device.group_id,
+                        online=device.online,
+                        battery_level=device.battery_level,
+                        signal_strength=device.signal_strength,
+                        temperature=device.temperature,
+                        tampered=device.tampered,
+                        triggered=event.triggered,
+                        bypassed=device.bypassed,
+                        firmware_version=device.firmware_version,
+                        raw_data=device.raw_data,
+                    )
+                    # Notify listeners
+                    self.async_set_updated_data(self.data)
+
+    @property
+    def sqs_enabled(self) -> bool:
+        """Return True if SQS listener is enabled and running."""
+        return self._sqs_listener is not None and self._sqs_listener.is_running

@@ -30,6 +30,14 @@ AUTH_MODE_USER = "user"
 CONF_HUB_ID = "hub_id"
 CONF_SPACE_ID = "space_id"
 
+# AWS SQS Configuration (Enterprise API)
+CONF_SQS_ENABLED = "sqs_enabled"
+CONF_SQS_QUEUE_URL = "sqs_queue_url"
+CONF_AWS_ACCESS_KEY = "aws_access_key"
+CONF_AWS_SECRET_KEY = "aws_secret_key"
+CONF_AWS_REGION = "aws_region"
+DEFAULT_AWS_REGION = "eu-west-1"
+
 # Update intervals (seconds)
 DEFAULT_SCAN_INTERVAL = 3
 MIN_SCAN_INTERVAL = 3

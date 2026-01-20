@@ -18,6 +18,9 @@ from .const import (
     AUTH_MODE_USER,
     CONF_API_KEY,
     CONF_AUTH_MODE,
+    CONF_AWS_ACCESS_KEY,
+    CONF_AWS_REGION,
+    CONF_AWS_SECRET_KEY,
     CONF_COMPANY_ID,
     CONF_COMPANY_TOKEN,
     CONF_HUB_ID,
@@ -25,7 +28,10 @@ from .const import (
     CONF_REFRESH_TOKEN,
     CONF_SESSION_TOKEN,
     CONF_SPACE_ID,
+    CONF_SQS_ENABLED,
+    CONF_SQS_QUEUE_URL,
     CONF_USER_ID,
+    DEFAULT_AWS_REGION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
@@ -395,22 +401,114 @@ class AjaxSystemsOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the options."""
+        """Manage the options - show menu."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["general", "sqs"],
+        )
+
+    async def async_step_general(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage general options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Merge with existing options
+            new_options = {**self.config_entry.options, **user_input}
+            return self.async_create_entry(title="", data=new_options)
 
         current_interval = self.config_entry.options.get(
             "scan_interval", DEFAULT_SCAN_INTERVAL
         )
 
         return self.async_show_form(
-            step_id="init",
+            step_id="general",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
                         "scan_interval",
                         default=current_interval,
-                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=300)),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=3, max=300)),
                 }
             ),
+        )
+
+    async def async_step_sqs(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage SQS options for real-time events."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            sqs_enabled = user_input.get(CONF_SQS_ENABLED, False)
+
+            if sqs_enabled:
+                # Validate required fields when SQS is enabled
+                queue_url = user_input.get(CONF_SQS_QUEUE_URL, "").strip()
+                aws_access_key = user_input.get(CONF_AWS_ACCESS_KEY, "").strip()
+                aws_secret_key = user_input.get(CONF_AWS_SECRET_KEY, "").strip()
+
+                if not queue_url:
+                    errors[CONF_SQS_QUEUE_URL] = "sqs_queue_url_required"
+                elif not queue_url.startswith("https://sqs."):
+                    errors[CONF_SQS_QUEUE_URL] = "sqs_queue_url_invalid"
+
+                if not aws_access_key:
+                    errors[CONF_AWS_ACCESS_KEY] = "aws_access_key_required"
+
+                if not aws_secret_key:
+                    errors[CONF_AWS_SECRET_KEY] = "aws_secret_key_required"
+
+            if not errors:
+                # Merge with existing options
+                new_options = {**self.config_entry.options}
+                new_options[CONF_SQS_ENABLED] = sqs_enabled
+
+                if sqs_enabled:
+                    new_options[CONF_SQS_QUEUE_URL] = user_input.get(CONF_SQS_QUEUE_URL, "").strip()
+                    new_options[CONF_AWS_ACCESS_KEY] = user_input.get(CONF_AWS_ACCESS_KEY, "").strip()
+                    new_options[CONF_AWS_SECRET_KEY] = user_input.get(CONF_AWS_SECRET_KEY, "").strip()
+                    new_options[CONF_AWS_REGION] = user_input.get(CONF_AWS_REGION, DEFAULT_AWS_REGION).strip()
+                else:
+                    # Clear SQS credentials when disabled
+                    new_options.pop(CONF_SQS_QUEUE_URL, None)
+                    new_options.pop(CONF_AWS_ACCESS_KEY, None)
+                    new_options.pop(CONF_AWS_SECRET_KEY, None)
+                    new_options.pop(CONF_AWS_REGION, None)
+
+                return self.async_create_entry(title="", data=new_options)
+
+        # Get current values
+        current_enabled = self.config_entry.options.get(CONF_SQS_ENABLED, False)
+        current_queue_url = self.config_entry.options.get(CONF_SQS_QUEUE_URL, "")
+        current_access_key = self.config_entry.options.get(CONF_AWS_ACCESS_KEY, "")
+        current_secret_key = self.config_entry.options.get(CONF_AWS_SECRET_KEY, "")
+        current_region = self.config_entry.options.get(CONF_AWS_REGION, DEFAULT_AWS_REGION)
+
+        return self.async_show_form(
+            step_id="sqs",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_SQS_ENABLED,
+                        default=current_enabled,
+                    ): bool,
+                    vol.Optional(
+                        CONF_SQS_QUEUE_URL,
+                        default=current_queue_url,
+                    ): str,
+                    vol.Optional(
+                        CONF_AWS_ACCESS_KEY,
+                        default=current_access_key,
+                    ): str,
+                    vol.Optional(
+                        CONF_AWS_SECRET_KEY,
+                        default=current_secret_key,
+                    ): str,
+                    vol.Optional(
+                        CONF_AWS_REGION,
+                        default=current_region,
+                    ): str,
+                }
+            ),
+            errors=errors,
         )

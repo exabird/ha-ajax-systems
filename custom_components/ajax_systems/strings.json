@@ -66,13 +66,45 @@
       "init": {
         "title": "Ajax Systems Options",
         "description": "Configure your Ajax Systems integration settings.",
+        "menu_options": {
+          "general": "General Settings",
+          "sqs": "Real-Time Events (AWS SQS)"
+        }
+      },
+      "general": {
+        "title": "General Settings",
+        "description": "Configure polling interval and general settings.",
         "data": {
           "scan_interval": "Update interval (seconds)"
         },
         "data_description": {
-          "scan_interval": "How often to poll the Ajax API (in seconds). Minimum: 10s, Maximum: 300s (5 minutes)."
+          "scan_interval": "How often to poll the Ajax API (in seconds). Minimum: 3s, Maximum: 300s (5 minutes)."
+        }
+      },
+      "sqs": {
+        "title": "Real-Time Events (AWS SQS)",
+        "description": "Configure AWS SQS for instant event notifications.\n\nThis requires an Enterprise API account with AWS SQS access. Events will be received in real-time instead of waiting for the next poll.",
+        "data": {
+          "sqs_enabled": "Enable SQS real-time events",
+          "sqs_queue_url": "SQS Queue URL",
+          "aws_access_key": "AWS Access Key ID",
+          "aws_secret_key": "AWS Secret Access Key",
+          "aws_region": "AWS Region"
+        },
+        "data_description": {
+          "sqs_enabled": "Enable real-time event reception via AWS SQS.",
+          "sqs_queue_url": "The full SQS queue URL (e.g., https://sqs.eu-west-1.amazonaws.com/...)",
+          "aws_access_key": "Your AWS Access Key ID for SQS access.",
+          "aws_secret_key": "Your AWS Secret Access Key for SQS access.",
+          "aws_region": "AWS region where your SQS queue is located (default: eu-west-1)."
         }
       }
+    },
+    "error": {
+      "sqs_queue_url_required": "SQS Queue URL is required when SQS is enabled.",
+      "sqs_queue_url_invalid": "Invalid SQS Queue URL. It should start with https://sqs.",
+      "aws_access_key_required": "AWS Access Key is required when SQS is enabled.",
+      "aws_secret_key_required": "AWS Secret Key is required when SQS is enabled."
     }
   },
   "entity": {
