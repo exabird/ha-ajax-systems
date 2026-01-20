@@ -3,6 +3,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/exabird/ha-ajax-systems)](https://github.com/exabird/ha-ajax-systems/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/exabird)
 
 **100% Open Source** Home Assistant integration for Ajax Systems security devices.
 
@@ -209,6 +210,12 @@ Contributions are welcome! Please:
 
 - **Issues**: [GitHub Issues](https://github.com/exabird/ha-ajax-systems/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/exabird/ha-ajax-systems/discussions)
+
+### Support the Project
+
+If you find this integration useful, consider buying me a coffee!
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/exabird)
 
 ## License
 
